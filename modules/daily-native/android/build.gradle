@@ -1,0 +1,31 @@
+apply plugin: 'com.android.library'
+
+group = 'expo.modules.daily'
+version = '0.2.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+useDefaultAndroidSdkVersions()
+
+android {
+  namespace "expo.modules.daily"
+  defaultConfig {
+    versionCode 1
+    versionName "0.2.0"
+  }
+  lint {
+    abortOnError false
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  // 端末内の待機語エンジン（Picovoice Porcupine）
+  implementation 'ai.picovoice:porcupine-android:4.0.2'
+}
