@@ -19,8 +19,9 @@
     "react-native": "0.86.3",
     "react-native-safe-area-context": "*"
   },
-    "devDependencies": {
+  "devDependencies": {
     "@types/react": "~19.2.0",
     "babel-preset-expo": "*",
     "typescript": "~5.9.2"
   }
+}
