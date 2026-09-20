@@ -34,7 +34,7 @@ export type TodayUsage = {
 
 // ---- 常時待機サービスのイベント ---------------------------------------------------
 export type DailyMessage = { role: 'user' | 'model' | 'error'; text: string };
-/** listening=呼びかけ待ち / awake=指示待ち / thinking / speaking / paused=アプリで会話中 / stopped */
+/** listening=呼びかけ待ち / awake=会話中（続けて話せる） / thinking / speaking / paused=アプリで会話中 / stopped */
 export type DailyState = { state: 'listening' | 'awake' | 'thinking' | 'speaking' | 'paused' | 'stopped' };
 
 type DailyEvents = {
@@ -46,7 +46,9 @@ declare class DailyNative extends NativeModule<DailyEvents> {
   hasUsagePermission(): boolean;
   openUsageSettings(): void;
   getTodayUsage(): Promise<TodayUsage>;
-  setConfig(apiKey: string, model: string, speak: boolean, picovoiceKey: string): void;
+  setConfig(apiKey: string, model: string, speak: boolean): void;
+  startThinkingSound(): void;
+  stopThinkingSound(): void;
   startService(): void;
   stopService(): void;
   isServiceRunning(): boolean;
@@ -75,8 +77,8 @@ export async function getTodayUsage(): Promise<TodayUsage | null> {
 }
 
 // ---- 常時待機サービス -----------------------------------------------------------
-export function setDailyConfig(apiKey: string, model: string, speak: boolean, picovoiceKey: string): void {
-  native?.setConfig(apiKey, model, speak, picovoiceKey);
+export function setDailyConfig(apiKey: string, model: string, speak: boolean): void {
+  native?.setConfig(apiKey, model, speak);
 }
 export function startDailyService(): void {
   native?.startService();
@@ -89,6 +91,13 @@ export function isDailyServiceRunning(): boolean {
 }
 export function setDailyServicePaused(paused: boolean): void {
   native?.setServicePaused(paused);
+}
+/** 「考え中」のポコポコ音（鳴らし続ける）。stop するまで続く */
+export function startThinkingSound(): void {
+  native?.startThinkingSound();
+}
+export function stopThinkingSound(): void {
+  native?.stopThinkingSound();
 }
 export function openBatterySettings(): void {
   native?.openBatterySettings();

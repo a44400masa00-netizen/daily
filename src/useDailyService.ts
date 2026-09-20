@@ -17,7 +17,7 @@ import type { Settings } from './settings';
 
 const STATE_LABEL: Record<DailyState['state'], string> = {
   listening: '呼びかけ待ち',
-  awake: 'どうぞ話してください',
+  awake: '会話中（「デイリー戻って」で終了）',
   thinking: '考え中…',
   speaking: '話しています…',
   paused: 'アプリで会話中（一時停止）',
@@ -56,9 +56,9 @@ export function useDailyService(
   // 設定を変えたら、サービス側の保存値も更新（アプリを閉じてもこの値が使われる）
   useEffect(() => {
     if (isDailyAvailable && settings.apiKey) {
-      setDailyConfig(settings.apiKey, settings.model, settings.speak, settings.picovoiceKey);
+      setDailyConfig(settings.apiKey, settings.model, settings.speak);
     }
-  }, [settings.apiKey, settings.model, settings.speak, settings.picovoiceKey]);
+  }, [settings.apiKey, settings.model, settings.speak]);
 
   useEffect(() => {
     if (running) setDailyServicePaused(paused);
@@ -87,14 +87,14 @@ export function useDailyService(
         return;
       }
       try {
-        setDailyConfig(settings.apiKey, settings.model, settings.speak, settings.picovoiceKey);
+        setDailyConfig(settings.apiKey, settings.model, settings.speak);
         startDailyService();
         setRunning(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : '開始できませんでした。');
       }
     },
-    [settings.apiKey, settings.model, settings.speak, settings.picovoiceKey]
+    [settings.apiKey, settings.model, settings.speak]
   );
 
   return {

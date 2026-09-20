@@ -53,4 +53,20 @@ object WakeWord {
     val rawEnd = rawIndex[bestPos + bestLen - 1] + 1
     return raw.substring(rawEnd).trim { it.isWhitespace() || it in TRIM_CHARS }
   }
+
+  // 会話を終える言葉（正規化後）。「デイリー」と一緒に言われたときだけ有効
+  private val END_WORDS = listOf("戻って", "もどって", "戻ろう", "もどろう", "終了", "終わり", "おわり", "おしまい", "もういい")
+
+  private fun normalizeAll(raw: String): String {
+    val sb = StringBuilder()
+    raw.forEach { ch -> normalizeChar(ch)?.let { sb.append(it) } }
+    return sb.toString()
+  }
+
+  /** 「デイリー戻って」「デイリー戻っていいよ」など、会話を終える呼びかけか */
+  fun isEndCommand(raw: String): Boolean {
+    val s = normalizeAll(raw)
+    if (WORDS.none { s.contains(it) }) return false // 「デイリー」が無ければ普通の会話として扱う
+    return END_WORDS.any { s.contains(it) }
+  }
 }

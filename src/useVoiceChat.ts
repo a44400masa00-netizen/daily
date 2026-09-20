@@ -8,6 +8,8 @@ import {
   hasUsagePermission,
   isUsageStatsAvailable,
   openUsageAccessSettings,
+  startThinkingSound,
+  stopThinkingSound,
   type TodayUsage,
 } from '../modules/daily-native';
 import { askGemini, type ChatTurn } from './gemini';
@@ -67,8 +69,12 @@ export function useVoiceChat(settings: Settings) {
 
   // ---- 小さなヘルパー -------------------------------------------------------
   const changeStatus = (s: Status) => {
+    const prev = statusRef.current;
     statusRef.current = s;
     setStatus(s);
+    // 考え中はポコポコ音を鳴らし続ける
+    if (s === 'thinking' && prev !== 'thinking') startThinkingSound();
+    else if (s !== 'thinking' && prev === 'thinking') stopThinkingSound();
   };
 
   const addMessage = (role: Message['role'], text: string) => {

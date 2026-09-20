@@ -13,6 +13,8 @@ import expo.modules.kotlin.modules.ModuleDefinition
 
 class DailyModule : Module() {
 
+  private val thinking = ThinkingSound()
+
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
@@ -27,6 +29,7 @@ class DailyModule : Module() {
     }
     OnDestroy {
       DailyBus.listener = null
+      thinking.stop()
     }
 
     // ---- 使用状況 (UsageStats) ------------------------------------------------
@@ -44,12 +47,11 @@ class DailyModule : Module() {
 
     // ---- 常時待機サービス ------------------------------------------------------
     // サービスはアプリが閉じていても読めるよう、設定を端末内の非公開領域に保存する
-    Function("setConfig") { apiKey: String, model: String, speak: Boolean, picovoiceKey: String ->
+    Function("setConfig") { apiKey: String, model: String, speak: Boolean ->
       context.getSharedPreferences(DailyListenerService.PREFS, Context.MODE_PRIVATE).edit()
         .putString("api_key", apiKey)
         .putString("model", model)
         .putBoolean("speak", speak)
-        .putString("picovoice_key", picovoiceKey)
         .apply()
     }
 
@@ -65,6 +67,15 @@ class DailyModule : Module() {
 
     Function("stopService") {
       context.stopService(Intent(context, DailyListenerService::class.java))
+    }
+
+    // 「考え中」のポコポコ音（アプリ画面での会話用。サービス側は自前で鳴らす）
+    Function("startThinkingSound") {
+      thinking.start()
+    }
+
+    Function("stopThinkingSound") {
+      thinking.stop()
     }
 
     Function("isServiceRunning") {

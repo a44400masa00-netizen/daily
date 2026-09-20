@@ -107,8 +107,8 @@ function Root() {
               <Text style={styles.usageMain}>「デイリー」で呼び出す</Text>
               <Text style={styles.usageNote}>
                 {daily.running
-                  ? `オン（${daily.stateLabel}）アプリを閉じても、画面ロック中でも「デイリー、今日どれくらい使ってる？」のように話しかけられます。`
-                  : 'オンにすると、InstagramやLINEを見ながらでも、画面ロック中でも、呼びかけるだけで答えます。'}
+                  ? `オン（${daily.stateLabel}）「デイリー」と呼ぶと会話モードになり、あとは呼ばずに続けて話せます。「デイリー戻って」で待機に戻ります。`
+                  : 'オンにすると、InstagramやLINEを見ながらでも、画面ロック中でも、「デイリー」と呼びかけるだけで会話できます。'}
               </Text>
             </View>
             <Switch

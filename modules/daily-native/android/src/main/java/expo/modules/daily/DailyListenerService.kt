@@ -30,16 +30,20 @@ import java.util.concurrent.Executors
 /**
  * 「デイリー」と呼びかけると起動する常駐サービス（マイク型フォアグラウンドサービス）。
  *
- *  待機(WAKE) ──「デイリー」──▶ 指示待ち(COMMAND) or そのまま処理 ──▶ 処理中(BUSY: Gemini→読み上げ) ──▶ 待機
+ *  WAKE（呼びかけ待ち）──「デイリー」──▶ SESSION（会話中）⇄ BUSY（考え中 → 読み上げ）
+ *                                        │
+ *                 「デイリー戻って」──────┘──▶ WAKE に戻る
  *
+ * 一度呼びかけると会話モード(SESSION)になり、毎回呼ばなくても続けて話せる。
  * アプリ(JS)が閉じていても動くよう、音声認識・Gemini 呼び出し・読み上げをすべてネイティブで行う。
  */
 class DailyListenerService : Service() {
 
-  private enum class Phase { WAKE, COMMAND, BUSY }
+  private enum class Phase { WAKE, SESSION, BUSY }
 
   private val main = Handler(Looper.getMainLooper())
   private val worker: ExecutorService = Executors.newSingleThreadExecutor()
+  private val thinking = ThinkingSound()
 
   private var recognizer: SpeechRecognizer? = null
   private var tts: TextToSpeech? = null
@@ -50,22 +54,19 @@ class DailyListenerService : Service() {
   private val focusListener = AudioManager.OnAudioFocusChangeListener { }
 
   private var phase = Phase.WAKE
+  private var sessionActive = false // 会話モード中（「デイリー戻って」まで続く）
   private var externalPause = false // アプリ画面で会話中は待機を止める
   private var stopped = false
   private var cleanedUp = false
   private var useOnDevice = Build.VERSION.SDK_INT >= 33
   private var consecutiveErrors = 0
-  private var commandDeadline = 0L
-
-  // Picovoice Porcupine による呼びかけ検出（準備できるまで／未設定なら SpeechRecognizer で代用）
-  private val prep: ExecutorService = Executors.newSingleThreadExecutor()
-  private var wakeDetector: WakeDetector? = null
 
   // 会話履歴（worker スレッドからのみ触る）
   private val history = ArrayList<GeminiClient.Turn>()
   private var lastInteraction = 0L
 
   private val restartRunnable = Runnable { startListening() }
+  private val sessionTimeoutRunnable = Runnable { onSessionTimeout() }
 
   // ---- ライフサイクル -----------------------------------------------------------
 
@@ -93,7 +94,6 @@ class DailyListenerService : Service() {
       acquireWakeLock()
       emitState("listening")
       scheduleRestart(0)
-      prepareWake()
     }
     // 強制終了後に勝手に再起動されない（バックグラウンドからのマイク起動は Android が禁止しているため）
     return START_NOT_STICKY
@@ -118,9 +118,7 @@ class DailyListenerService : Service() {
     running = false
     instance = null
     main.removeCallbacksAndMessages(null)
-    wakeDetector?.close()
-    wakeDetector = null
-    prep.shutdownNow()
+    thinking.stop()
     destroyRecognizer()
     tts?.stop()
     tts?.shutdown()
@@ -144,12 +142,11 @@ class DailyListenerService : Service() {
     externalPause = paused
     if (paused) {
       main.removeCallbacks(restartRunnable)
-      wakeDetector?.stop()
       destroyRecognizer()
       emitState("paused")
     } else if (phase != Phase.BUSY) {
-      phase = Phase.WAKE
-      emitState("listening")
+      phase = if (sessionActive) Phase.SESSION else Phase.WAKE
+      showIdleState()
       scheduleRestart(400)
     }
   }
@@ -186,15 +183,6 @@ class DailyListenerService : Service() {
 
   private fun startListening() {
     if (stopped || externalPause || phase == Phase.BUSY) return
-    // 呼びかけ待ちは Porcupine（専用エンジン）が使えるならそちらで。指示の聞き取りだけ SpeechRecognizer を使う
-    if (phase == Phase.WAKE) {
-      val detector = wakeDetector
-      if (detector != null) {
-        destroyRecognizer()
-        detector.start()
-        return
-      }
-    }
     if (recognizer == null) recognizer = createRecognizer()
     val r = recognizer
     if (r == null) {
@@ -242,6 +230,11 @@ class DailyListenerService : Service() {
     consecutiveErrors = 0
     when (phase) {
       Phase.WAKE -> {
+        // 会話中でないときの「デイリー戻って」は無視。「デイリー」が含まれていれば会話を開始する
+        if (candidates.any { WakeWord.isEndCommand(it) }) {
+          scheduleRestart(150)
+          return
+        }
         for (c in candidates) {
           val cmd = WakeWord.extractCommand(c)
           if (cmd != null) {
@@ -251,19 +244,26 @@ class DailyListenerService : Service() {
         }
         scheduleRestart(150) // 呼びかけ無し: 何も送らず捨てて待機を続ける
       }
-      Phase.COMMAND -> {
+      Phase.SESSION -> {
         val first = candidates.firstOrNull()?.trim().orEmpty()
         if (first.isEmpty()) {
-          if (System.currentTimeMillis() > commandDeadline) {
-            phase = Phase.WAKE // 指示が来ないまま時間切れ → 呼びかけ待ちに戻る
-            updateNotification(IDLE_TEXT)
-            emitState("listening")
-          }
           scheduleRestart(150)
-        } else {
-          // 「デイリー、〇〇」と言い直された場合は呼びかけ部分を外す
-          val text = WakeWord.extractCommand(first)?.takeIf { it.isNotEmpty() } ?: first
-          processCommand(text)
+          return
+        }
+        armSessionTimeout()
+        if (candidates.any { WakeWord.isEndCommand(it) }) {
+          endSession()
+          return
+        }
+        // 「デイリー、〇〇」と呼びかけ付きで言われた場合は呼びかけ部分を外す（呼ばれたことは確実）
+        val stripped = WakeWord.extractCommand(first)
+        when {
+          stripped == null -> processCommand(first, addressed = false)
+          stripped.isEmpty() -> {
+            chime()
+            scheduleRestart(350)
+          }
+          else -> processCommand(stripped, addressed = true)
         }
       }
       Phase.BUSY -> Unit
@@ -274,13 +274,7 @@ class DailyListenerService : Service() {
     if (stopped || externalPause) return
     when (code) {
       SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-        // 無音は普通のこと。指示待ちが時間切れなら待機に戻す
-        if (phase == Phase.COMMAND && System.currentTimeMillis() > commandDeadline) {
-          phase = Phase.WAKE
-          updateNotification(IDLE_TEXT)
-          emitState("listening")
-        }
-        scheduleRestart(200)
+        scheduleRestart(200) // 無音は普通のこと。聞き取りを続ける
       }
       SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
         destroyRecognizer()
@@ -310,99 +304,71 @@ class DailyListenerService : Service() {
     }
   }
 
-  // ---- Porcupine（呼びかけ検出） -----------------------------------------------------------
-
-  private fun prepareWake() {
-    val key = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("picovoice_key", "").orEmpty()
-    if (key.isBlank()) {
-      DailyBus.emit(
-        "onMessage",
-        mapOf(
-          "role" to "error",
-          "text" to "Picovoice AccessKey が未設定のため、簡易の呼びかけ検出で動いています（精度・電池消費が劣ります）。設定で入力すると専用エンジンに切り替わります。"
-        )
-      )
-      return
-    }
-    updateNotification("呼びかけの準備中…（初回はネット接続が必要です）")
-    prep.execute {
-      val problems = ArrayList<String>()
-      val engines = try {
-        WakeEngineFactory.build(applicationContext, key) { problems.add(it) }
-      } catch (e: Throwable) {
-        problems.add(e.message ?: e.javaClass.simpleName)
-        emptyList()
-      }
-      main.post {
-        if (stopped || engines.isEmpty()) {
-          engines.forEach { it.porcupine.delete() }
-          if (!stopped) {
-            updateNotification(IDLE_TEXT)
-            DailyBus.emit(
-              "onMessage",
-              mapOf(
-                "role" to "error",
-                "text" to "呼びかけの専用エンジンを準備できなかったので、簡易検出で動きます。(${problems.joinToString(" / ")})"
-              )
-            )
-          }
-          return@post
-        }
-        if (problems.isNotEmpty()) {
-          DailyBus.emit(
-            "onMessage",
-            mapOf("role" to "error", "text" to "一部の呼びかけを準備できませんでした。(${problems.joinToString(" / ")})")
-          )
-        }
-        wakeDetector = WakeDetector(
-          engines,
-          onDetected = { main.post { onPorcupineDetected() } },
-          onFailure = { main.post { onDetectorFailure() } }
-        )
-        updateNotification(IDLE_TEXT)
-        if (phase == Phase.WAKE && !externalPause) {
-          destroyRecognizer() // 簡易検出から専用エンジンへ切り替え
-          scheduleRestart(0)
-        }
-      }
-    }
-  }
-
-  private fun onPorcupineDetected() {
-    if (stopped || externalPause || phase != Phase.WAKE) return
-    consecutiveErrors = 0
-    onWake("") // 合図音 → 指示の聞き取りへ
-  }
-
-  private fun onDetectorFailure() {
-    if (stopped || externalPause || phase != Phase.WAKE) return
-    consecutiveErrors += 1
-    scheduleRestart(minOf(30_000L, 1_000L shl minOf(consecutiveErrors, 5))) // マイクが空くまで待って再試行
-  }
-
-  // ---- 呼びかけ → 指示 → 応答 ---------------------------------------------------------
+  // ---- 会話モード（呼びかけ → 続けて会話 → 「デイリー戻って」で終了） -------------------------
 
   private fun onWake(command: String) {
+    sessionActive = true
+    armSessionTimeout()
     if (command.isBlank()) {
-      // 「デイリー」だけ言われた: 合図を鳴らして続きを聞く
-      phase = Phase.COMMAND
-      commandDeadline = System.currentTimeMillis() + 9_000
+      // 「デイリー」だけ言われた: 合図音を鳴らして続きを聞く
+      phase = Phase.SESSION
       chime()
-      updateNotification("どうぞ、話してください")
-      emitState("awake")
+      showIdleState()
       scheduleRestart(350)
     } else {
-      processCommand(command)
+      processCommand(command, addressed = true)
     }
   }
 
-  private fun processCommand(text: String) {
+  private fun endSession() {
+    sessionActive = false
+    main.removeCallbacks(sessionTimeoutRunnable)
+    phase = Phase.BUSY
+    main.removeCallbacks(restartRunnable)
+    destroyRecognizer()
+    speakText("はい、待機に戻ります。また呼んでくださいね。", "model")
+  }
+
+  /** 長時間だれも話さなかったら待機に戻す（つけっぱなし防止） */
+  private fun onSessionTimeout() {
+    if (stopped || !sessionActive) return
+    if (phase == Phase.BUSY) {
+      armSessionTimeout()
+      return
+    }
+    sessionActive = false
+    phase = Phase.WAKE
+    destroyRecognizer()
+    DailyBus.emit("onMessage", mapOf("role" to "error", "text" to "しばらく話しかけがなかったので、待機に戻りました。"))
+    showIdleState()
+    if (!externalPause) scheduleRestart(300)
+  }
+
+  private fun armSessionTimeout() {
+    main.removeCallbacks(sessionTimeoutRunnable)
+    if (SESSION_IDLE_TIMEOUT_MS > 0) main.postDelayed(sessionTimeoutRunnable, SESSION_IDLE_TIMEOUT_MS)
+  }
+
+  private fun showIdleState() {
+    if (sessionActive) {
+      updateNotification(SESSION_TEXT)
+      emitState("awake")
+    } else {
+      updateNotification(IDLE_TEXT)
+      emitState("listening")
+    }
+  }
+
+  // ---- 指示 → Gemini → 読み上げ ------------------------------------------------------------
+
+  /** @param addressed 「デイリー」と呼びかけて言われた発話か（true なら無視せず必ず答える） */
+  private fun processCommand(text: String, addressed: Boolean) {
     phase = Phase.BUSY
     main.removeCallbacks(restartRunnable)
     destroyRecognizer()
     updateNotification("考え中…")
     emitState("thinking")
-    DailyBus.emit("onMessage", mapOf("role" to "user", "text" to text))
+    thinking.start() // 考え中はポコポコ音を鳴らし続ける
 
     worker.execute {
       val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -410,7 +376,7 @@ class DailyListenerService : Service() {
       val model = prefs.getString("model", "gemini-3.8-flash").orEmpty().ifBlank { "gemini-3.8-flash" }
 
       if (apiKey.isBlank()) {
-        main.post { deliver("アプリを開いて、設定でジェミニのAPIキーを入れてください。", isError = true) }
+        main.post { deliverError(text, "アプリを開いて、設定でジェミニのAPIキーを入れてください。") }
         return@execute
       }
 
@@ -421,11 +387,19 @@ class DailyListenerService : Service() {
 
       try {
         val reply = GeminiClient.ask(apiKey, model, PromptBuilder.build(applicationContext), trimmedHistory())
-        history.add(GeminiClient.Turn("model", reply))
-        main.post { deliver(reply, isError = false) }
+        val ignored = reply.contains(PromptBuilder.IGNORE_TOKEN)
+        if (ignored && !addressed) {
+          // 動画や周囲の声など、デイリーへの話しかけではない → 何も言わず聞き取りに戻る
+          history.removeAt(history.size - 1)
+          main.post { resumeListening() }
+          return@execute
+        }
+        val finalText = if (ignored) "うまく聞き取れませんでした。もう一度お願いします。" else reply
+        history.add(GeminiClient.Turn("model", finalText))
+        main.post { deliverReply(text, finalText) }
       } catch (e: Exception) {
         history.removeAt(history.size - 1) // 失敗したターンは履歴に残さない
-        main.post { deliver(e.message ?: "エラーが起きました。", isError = true) }
+        main.post { deliverError(text, e.message ?: "エラーが起きました。") }
       }
     }
   }
@@ -436,12 +410,25 @@ class DailyListenerService : Service() {
     return recent
   }
 
-  private fun deliver(text: String, isError: Boolean) {
+  private fun deliverReply(userText: String, reply: String) {
     if (stopped) return
-    DailyBus.emit("onMessage", mapOf("role" to if (isError) "error" else "model", "text" to text))
+    DailyBus.emit("onMessage", mapOf("role" to "user", "text" to userText))
+    speakText(reply, "model")
+  }
+
+  private fun deliverError(userText: String, message: String) {
+    if (stopped) return
+    DailyBus.emit("onMessage", mapOf("role" to "user", "text" to userText))
+    speakText(message, "error")
+  }
+
+  /** 画面に出して読み上げる。読み上げが終わったら聞き取りに戻る */
+  private fun speakText(text: String, role: String) {
+    thinking.stop()
+    DailyBus.emit("onMessage", mapOf("role" to role, "text" to text))
     val speakOn = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("speak", true)
     if (!speakOn || !ttsReady) {
-      finishSpeaking()
+      resumeListening()
       return
     }
     requestFocus()
@@ -450,13 +437,14 @@ class DailyListenerService : Service() {
     tts?.speak(cleanForSpeech(text), TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
   }
 
-  private fun finishSpeaking() {
+  /** 考え中/読み上げが終わったあと: 会話中ならそのまま続きを聞く、そうでなければ呼びかけ待ちへ */
+  private fun resumeListening() {
+    thinking.stop()
     abandonFocus()
     if (stopped) return
-    phase = Phase.WAKE
-    updateNotification(IDLE_TEXT)
-    emitState("listening")
-    if (!externalPause) scheduleRestart(400)
+    phase = if (sessionActive) Phase.SESSION else Phase.WAKE
+    showIdleState()
+    if (!externalPause) scheduleRestart(if (sessionActive) 300 else 400)
   }
 
   // ---- 読み上げ・合図・音声フォーカス ----------------------------------------------------
@@ -474,12 +462,12 @@ class DailyListenerService : Service() {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
           override fun onStart(utteranceId: String?) {}
           override fun onDone(utteranceId: String?) {
-            main.post { finishSpeaking() }
+            main.post { resumeListening() }
           }
 
           @Suppress("OVERRIDE_DEPRECATION")
           override fun onError(utteranceId: String?) {
-            main.post { finishSpeaking() }
+            main.post { resumeListening() }
           }
         })
         ttsReady = true
@@ -597,7 +585,14 @@ class DailyListenerService : Service() {
     private const val NOTIF_ID = 4201
     private const val UTTERANCE_ID = "daily-utt"
     private const val IDLE_TEXT = "「デイリー」と呼びかけてください"
+    private const val SESSION_TEXT = "会話中です。「デイリー戻って」で待機に戻ります"
     private const val IDLE_RESET_MS = 10 * 60 * 1000L
+
+    /**
+     * 会話モード中、この時間だれも話さなかったら待機に戻す（つけっぱなし防止）。
+     * 0 にすると「デイリー戻って」と言うまで永久に続く。
+     */
+    private const val SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000L
 
     @Volatile var running = false
     @Volatile var instance: DailyListenerService? = null

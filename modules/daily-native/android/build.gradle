@@ -20,12 +20,3 @@ android {
     abortOnError false
   }
 }
-
-repositories {
-  mavenCentral()
-}
-
-dependencies {
-  // 端末内の待機語エンジン（Picovoice Porcupine）
-  implementation 'ai.picovoice:porcupine-android:4.0.2'
-}

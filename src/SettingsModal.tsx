@@ -50,22 +50,6 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
           />
           <Text style={styles.hint}>キーはこの端末のアプリ専用の領域にだけ保存され、APKには含まれません。</Text>
 
-          <Text style={styles.label}>Picovoice AccessKey（任意）</Text>
-          <TextInput
-            style={styles.input}
-            value={draft.picovoiceKey}
-            onChangeText={(picovoiceKey) => setDraft({ ...draft, picovoiceKey })}
-            placeholder="console.picovoice.ai で無料発行"
-            placeholderTextColor={colors.muted}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <Text style={styles.hint}>
-            入れると「デイリー」「ヘイデイリー」を端末内の専用エンジンで検出します（電池・精度が大きく改善）。
-            初回だけネット接続が必要です。変更後は常時待機をオフ→オンにしてください。
-          </Text>
-
           <Text style={styles.label}>モデル名</Text>
           <TextInput
             style={styles.input}
