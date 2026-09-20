@@ -38,8 +38,15 @@ jobs:
       - name: Align package versions with the Expo SDK
         run: npx expo install --fix
 
-      - name: Fetch Porcupine Japanese model
-        run: bash scripts/fetch-porcupine-model.sh
+      - name: Fetch openWakeWord feature models
+        run: |
+          d=modules/daily-native/android/src/main/assets/wakeword
+          mkdir -p "$d"
+          for f in melspectrogram.onnx embedding_model.onnx; do
+            [ -s "$d/$f" ] || curl -fL --retry 3 -o "$d/$f" "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/$f"
+          done
+          test -s "$d/hey_daily.onnx" || { echo "::error::$d/hey_daily.onnx がありません。アップロードし直してください"; exit 1; }
+          ls -la "$d"
 
       - name: Expo prebuild (Android)
         run: npx expo prebuild --platform android
