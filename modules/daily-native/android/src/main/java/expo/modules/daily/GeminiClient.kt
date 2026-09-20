@@ -10,14 +10,54 @@ import java.net.URLEncoder
 /** アプリが閉じていても使えるよう、Gemini API (generateContent) をネイティブから直接呼ぶ。 */
 object GeminiClient {
 
-  class GeminiException(message: String) : Exception(message)
+  /** @param detail 画面にだけ出す詳細（HTTPコードやAPIのエラー文）。読み上げには使わない */
+  class GeminiException(message: String, val detail: String = "") : Exception(message)
+
+  private class HttpFailure(val status: Int, val raw: String) : Exception("HTTP $status")
 
   data class Turn(val role: String, val text: String) // role: "user" | "model"
 
   private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
 
+  // 混雑(503など)は一時的なことが多いので、間を置いて自動でやり直す
+  private val RETRYABLE = setOf(408, 500, 502, 503, 504)
+  private val RETRY_DELAYS_MS = longArrayOf(1_000, 2_500)
+
   /** ブロッキング呼び出し。必ずバックグラウンドスレッドから呼ぶこと。 */
   fun ask(apiKey: String, model: String, systemPrompt: String, history: List<Turn>): String {
+    // Gemini 3.x は thinkingLevel で思考量を調整（音声会話は速さ重視で low）
+    var useThinking = model.startsWith("gemini-3")
+    var attempt = 0
+    while (true) {
+      try {
+        return request(apiKey, model, systemPrompt, history, useThinking)
+      } catch (e: HttpFailure) {
+        // 思考設定が原因で拒否された場合は、設定を外して1回やり直す
+        if (e.status == 400 && useThinking && e.raw.contains("thinking", ignoreCase = true)) {
+          useThinking = false
+          continue
+        }
+        if (e.status in RETRYABLE && attempt < RETRY_DELAYS_MS.size) {
+          try {
+            Thread.sleep(RETRY_DELAYS_MS[attempt])
+          } catch (ie: InterruptedException) {
+            throw GeminiException("中断されました。")
+          }
+          attempt += 1
+          continue
+        }
+        throw toGeminiException(e)
+      }
+    }
+  }
+
+  private fun request(
+    apiKey: String,
+    model: String,
+    systemPrompt: String,
+    history: List<Turn>,
+    useThinking: Boolean
+  ): String {
     val contents = JSONArray()
     history.forEach { t ->
       contents.put(
@@ -27,8 +67,7 @@ object GeminiClient {
       )
     }
     val generationConfig = JSONObject()
-    // Gemini 3.x は thinkingLevel で思考量を調整（音声会話は速さ重視で low）
-    if (model.startsWith("gemini-3")) {
+    if (useThinking) {
       generationConfig.put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
     }
     val body = JSONObject()
@@ -50,7 +89,7 @@ object GeminiClient {
       val code = conn.responseCode
       val stream = if (code in 200..299) conn.inputStream else conn.errorStream
       val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-      if (code !in 200..299) throw GeminiException(friendlyError(code, raw))
+      if (code !in 200..299) throw HttpFailure(code, raw)
 
       val json = JSONObject(raw)
       if (json.optJSONObject("promptFeedback")?.has("blockReason") == true) {
@@ -69,27 +108,34 @@ object GeminiClient {
       val text = sb.toString().trim()
       if (text.isEmpty()) throw GeminiException("うまく回答を作れませんでした。もう一度話しかけてください。")
       return text
+    } catch (e: HttpFailure) {
+      throw e
     } catch (e: GeminiException) {
       throw e
     } catch (e: IOException) {
-      throw GeminiException("通信に失敗しました。ネットワークを確認してください。")
+      throw GeminiException("通信に失敗しました。ネットワークを確認してください。", e.javaClass.simpleName)
     } finally {
       conn.disconnect()
     }
   }
 
-  private fun friendlyError(status: Int, raw: String): String {
-    val detail = try {
-      JSONObject(raw).optJSONObject("error")?.optString("message", "") ?: ""
-    } catch (e: Exception) {
-      raw.take(120)
+  private fun toGeminiException(e: HttpFailure): GeminiException {
+    val apiMessage = try {
+      JSONObject(e.raw).optJSONObject("error")?.optString("message", "") ?: ""
+    } catch (ex: Exception) {
+      e.raw.take(120)
     }
-    return when (status) {
-      400 -> if (detail.contains("API key", ignoreCase = true)) "APIキーが正しくありません。アプリの設定を確認してください。" else "リクエストエラーです。"
+    val detail = "HTTP ${e.status}" + if (apiMessage.isNotBlank()) ": ${apiMessage.take(160)}" else ""
+    val message = when (e.status) {
+      400 ->
+        if (apiMessage.contains("API key", ignoreCase = true)) "APIキーが正しくありません。アプリの設定を確認してください。"
+        else "リクエストエラーです。"
       401, 403 -> "APIキーが無効か、権限がありません。アプリの設定を確認してください。"
       404 -> "モデルが見つかりません。アプリの設定でモデル名を確認してください。"
       429 -> "利用上限に達したか、混み合っています。少し待ってからお試しください。"
-      else -> "Gemini APIでエラーが起きました。"
+      in RETRYABLE -> "ジェミニ側が混み合っているようです。少し待ってからもう一度お願いします。"
+      else -> "ジェミニのAPIでエラーが起きました。"
     }
+    return GeminiException(message, detail)
   }
 }

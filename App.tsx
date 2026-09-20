@@ -104,11 +104,11 @@ function Root() {
         <View style={styles.dailyCard}>
           <View style={styles.permRow}>
             <View style={styles.flex}>
-              <Text style={styles.usageMain}>「デイリー」で呼び出す</Text>
+              <Text style={styles.usageMain}>「ヘイ、デイリー」で呼び出す</Text>
               <Text style={styles.usageNote}>
                 {daily.running
-                  ? `オン（${daily.stateLabel}）「デイリー」と呼ぶと会話モードになり、あとは呼ばずに続けて話せます。「デイリー戻って」で待機に戻ります。`
-                  : 'オンにすると、InstagramやLINEを見ながらでも、画面ロック中でも、「デイリー」と呼びかけるだけで会話できます。'}
+                  ? `オン（${daily.stateLabel}）「ヘイ、デイリー」と呼ぶと会話モードになり、あとは呼ばずに続けて話せます。「デイリー戻って」で待機に戻ります。`
+                  : 'オンにすると、InstagramやLINEを見ながらでも、画面ロック中でも、「ヘイ、デイリー」と呼びかけるだけで会話できます。'}
               </Text>
             </View>
             <Switch

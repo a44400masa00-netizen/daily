@@ -16,7 +16,7 @@ import {
 import type { Settings } from './settings';
 
 const STATE_LABEL: Record<DailyState['state'], string> = {
-  listening: '呼びかけ待ち',
+  listening: '「ヘイ、デイリー」待ち',
   awake: '会話中（「デイリー戻って」で終了）',
   thinking: '考え中…',
   speaking: '話しています…',

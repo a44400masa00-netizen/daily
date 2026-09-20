@@ -20,3 +20,12 @@ android {
     abortOnError false
   }
 }
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  // 呼びかけ検出(openWakeWord)の推論に使う ONNX Runtime
+  implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'
+}

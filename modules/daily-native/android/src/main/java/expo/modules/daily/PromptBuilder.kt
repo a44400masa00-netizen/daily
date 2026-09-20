@@ -36,8 +36,8 @@ object PromptBuilder {
       return "【スマホ使用状況】取得に失敗しました。使用状況の話題では、今は確認できないと伝えてください。"
     }
     val lines = ArrayList<String>()
-    lines.add("【今日のスマホ使用状況（0:00〜${hhmm(u.now)}）】")
-    lines.add("- 合計使用時間: ${formatDuration(u.totalMs)}（このアプリとホーム画面は除く）")
+    lines.add("【今日のスマホ使用状況（0:00〜${hhmm(u.now)}、経過${formatDuration(u.now - u.startOfDay)}）】")
+    lines.add("- 合計使用時間: ${formatDuration(u.totalMs)}（このアプリとホーム画面は除く。経過時間を超えることはない）")
     lines.add("- 画面ONの回数: ${u.screenOnCount}回 / ロック解除: ${u.unlockCount}回")
     if (u.apps.isNotEmpty()) {
       lines.add("- アプリ別（使用時間の長い順）:")

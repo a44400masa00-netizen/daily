@@ -23,6 +23,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -61,6 +62,12 @@ class DailyListenerService : Service() {
   private var useOnDevice = Build.VERSION.SDK_INT >= 33
   private var consecutiveErrors = 0
 
+  // openWakeWord による「ヘイ、デイリー」検出（準備できるまで／失敗したら SpeechRecognizer で代用）
+  private val prep: ExecutorService = Executors.newSingleThreadExecutor()
+  private var wakeDetector: WakeDetector? = null
+  private var detectorStartedAt = 0L
+  private var detectorFailures = 0
+
   // 会話履歴（worker スレッドからのみ触る）
   private val history = ArrayList<GeminiClient.Turn>()
   private var lastInteraction = 0L
@@ -82,7 +89,7 @@ class DailyListenerService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     try {
-      startForegroundCompat(IDLE_TEXT)
+      startForegroundCompat(idleText())
     } catch (e: Exception) {
       // マイク許可が無い / バックグラウンドから起動された等
       DailyBus.emit("onMessage", mapOf("role" to "error", "text" to "常時待機を開始できませんでした: ${e.message}"))
@@ -94,6 +101,7 @@ class DailyListenerService : Service() {
       acquireWakeLock()
       emitState("listening")
       scheduleRestart(0)
+      prepareWake()
     }
     // 強制終了後に勝手に再起動されない（バックグラウンドからのマイク起動は Android が禁止しているため）
     return START_NOT_STICKY
@@ -119,6 +127,9 @@ class DailyListenerService : Service() {
     instance = null
     main.removeCallbacksAndMessages(null)
     thinking.stop()
+    wakeDetector?.close()
+    wakeDetector = null
+    prep.shutdownNow()
     destroyRecognizer()
     tts?.stop()
     tts?.shutdown()
@@ -142,6 +153,7 @@ class DailyListenerService : Service() {
     externalPause = paused
     if (paused) {
       main.removeCallbacks(restartRunnable)
+      wakeDetector?.stop()
       destroyRecognizer()
       emitState("paused")
     } else if (phase != Phase.BUSY) {
@@ -183,6 +195,16 @@ class DailyListenerService : Service() {
 
   private fun startListening() {
     if (stopped || externalPause || phase == Phase.BUSY) return
+    // 呼びかけ待ちは openWakeWord（専用モデル）が使えるならそちらで。会話中の聞き取りだけ SpeechRecognizer を使う
+    if (phase == Phase.WAKE) {
+      val detector = wakeDetector
+      if (detector != null) {
+        destroyRecognizer()
+        detectorStartedAt = System.currentTimeMillis()
+        detector.start()
+        return
+      }
+    }
     if (recognizer == null) recognizer = createRecognizer()
     val r = recognizer
     if (r == null) {
@@ -304,6 +326,74 @@ class DailyListenerService : Service() {
     }
   }
 
+  // ---- openWakeWord（呼びかけ検出） ------------------------------------------------------------
+
+  private fun idleText(): String = if (wakeDetector != null) IDLE_TEXT_WAKEWORD else IDLE_TEXT
+
+  private fun prepareWake() {
+    prep.execute {
+      var failure: String? = null
+      val detector = try {
+        WakeDetector(
+          applicationContext,
+          onDetected = { main.post { onWakeDetected() } },
+          onFailure = { main.post { onDetectorFailure() } }
+        )
+      } catch (e: Throwable) {
+        Log.w("DailyWake", "wake model load failed", e)
+        failure = e.message ?: e.javaClass.simpleName
+        null
+      }
+      main.post {
+        if (stopped) {
+          detector?.close()
+          return@post
+        }
+        if (detector == null) {
+          DailyBus.emit(
+            "onMessage",
+            mapOf(
+              "role" to "error",
+              "text" to "呼びかけ用モデルを読み込めなかったので、簡易検出で動いています。($failure)"
+            )
+          )
+          return@post
+        }
+        wakeDetector = detector
+        showIdleState()
+        if (phase == Phase.WAKE && !externalPause) {
+          destroyRecognizer() // 簡易検出から専用モデルへ切り替え
+          scheduleRestart(0)
+        }
+      }
+    }
+  }
+
+  private fun onWakeDetected() {
+    if (stopped || externalPause || phase != Phase.WAKE) return
+    detectorFailures = 0
+    consecutiveErrors = 0
+    onWake("") // 合図音 → 会話モードへ
+  }
+
+  private fun onDetectorFailure() {
+    if (stopped || externalPause || phase != Phase.WAKE) return
+    // 起動直後にすぐ失敗する状態が続くなら、専用モデルをあきらめて簡易検出に切り替える
+    if (System.currentTimeMillis() - detectorStartedAt > 5_000) detectorFailures = 0 else detectorFailures += 1
+    if (detectorFailures >= 3) {
+      wakeDetector?.close()
+      wakeDetector = null
+      DailyBus.emit(
+        "onMessage",
+        mapOf("role" to "error", "text" to "専用の呼びかけ検出が動かないため、簡易検出に切り替えました。")
+      )
+      showIdleState()
+      scheduleRestart(300)
+    } else {
+      scheduleRestart(minOf(30_000L, 1_000L shl minOf(detectorFailures + 1, 5))) // マイクが空くまで待って再試行
+    }
+  }
+
   // ---- 会話モード（呼びかけ → 続けて会話 → 「デイリー戻って」で終了） -------------------------
 
   private fun onWake(command: String) {
@@ -354,7 +444,7 @@ class DailyListenerService : Service() {
       updateNotification(SESSION_TEXT)
       emitState("awake")
     } else {
-      updateNotification(IDLE_TEXT)
+      updateNotification(idleText())
       emitState("listening")
     }
   }
@@ -399,7 +489,10 @@ class DailyListenerService : Service() {
         main.post { deliverReply(text, finalText) }
       } catch (e: Exception) {
         history.removeAt(history.size - 1) // 失敗したターンは履歴に残さない
-        main.post { deliverError(text, e.message ?: "エラーが起きました。") }
+        val spoken = e.message ?: "エラーが起きました。"
+        val detail = (e as? GeminiClient.GeminiException)?.detail.orEmpty()
+        val shown = if (detail.isNotBlank()) "$spoken\n（$detail）" else spoken
+        main.post { deliverError(text, spoken, shown) }
       }
     }
   }
@@ -416,16 +509,17 @@ class DailyListenerService : Service() {
     speakText(reply, "model")
   }
 
-  private fun deliverError(userText: String, message: String) {
+  /** @param spoken 読み上げる短い文 @param shown 画面に出す文（詳細つき） */
+  private fun deliverError(userText: String, spoken: String, shown: String = spoken) {
     if (stopped) return
     DailyBus.emit("onMessage", mapOf("role" to "user", "text" to userText))
-    speakText(message, "error")
+    speakText(spoken, "error", shown)
   }
 
   /** 画面に出して読み上げる。読み上げが終わったら聞き取りに戻る */
-  private fun speakText(text: String, role: String) {
+  private fun speakText(text: String, role: String, shown: String = text) {
     thinking.stop()
-    DailyBus.emit("onMessage", mapOf("role" to role, "text" to text))
+    DailyBus.emit("onMessage", mapOf("role" to role, "text" to shown))
     val speakOn = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("speak", true)
     if (!speakOn || !ttsReady) {
       resumeListening()
@@ -585,6 +679,7 @@ class DailyListenerService : Service() {
     private const val NOTIF_ID = 4201
     private const val UTTERANCE_ID = "daily-utt"
     private const val IDLE_TEXT = "「デイリー」と呼びかけてください"
+    private const val IDLE_TEXT_WAKEWORD = "「ヘイ、デイリー」と呼びかけてください"
     private const val SESSION_TEXT = "会話中です。「デイリー戻って」で待機に戻ります"
     private const val IDLE_RESET_MS = 10 * 60 * 1000L
 
