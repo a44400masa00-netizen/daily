@@ -479,7 +479,7 @@ class DailyListenerService : Service() {
 
       try {
         val reply = Brain.ask(applicationContext, brainMode, apiKey, model, PromptBuilder.build(applicationContext), trimmedHistory())
-        val ignored = reply.contains(PromptBuilder.IGNORE_TOKEN)
+        val ignored = reply.contains("<IGNORE>")
         if (ignored && !addressed) {
           // 動画や周囲の声など、デイリーへの話しかけではない → 何も言わず聞き取りに戻る
           history.removeAt(history.size - 1)
