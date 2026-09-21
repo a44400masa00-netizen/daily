@@ -10,7 +10,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
-import android.os.Build
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -28,7 +27,6 @@ import android.util.Log
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import android.os.Build
 
 /**
  * 「デイリー」と呼びかけると起動する常駐サービス（マイク型フォアグラウンドサービス）。
