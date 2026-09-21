@@ -30,6 +30,15 @@ dependencies {
   // 呼びかけ検出(openWakeWord)の推論に使う ONNX Runtime
   implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'
 
-  // 端末内AI（Gemma 4）を動かす LiteRT-LM。最初のビルドが通ったら、解決された版に固定してください
-  implementation 'com.google.ai.edge.litertlm:litertlm-android:latest.release'
+  // 端末内AI（Gemma 4）を動かす LiteRT-LM。ビルドで解決された 0.17.1 に固定（Kotlin 2.4 でビルドされている）
+  implementation 'com.google.ai.edge.litertlm:litertlm-android:0.17.1'
+}
+
+// LiteRT-LM は Kotlin 2.4 でビルドされているが、Expo SDK 57 の Kotlin コンパイラは 2.1.x で、
+// そのままだと「incompatible version of Kotlin」でコンパイルに失敗する。
+// このモジュールのコンパイルだけ、新しい Kotlin のメタデータの版チェックを省略する。
+tasks.configureEach { task ->
+  if (task.name.startsWith("compile") && task.name.endsWith("Kotlin") && task.hasProperty("compilerOptions")) {
+    task.compilerOptions.freeCompilerArgs.add("-Xskip-metadata-version-check")
+  }
 }
