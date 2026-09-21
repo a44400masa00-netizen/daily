@@ -42,11 +42,22 @@ type DailyEvents = {
   onState(e: DailyState): void;
 };
 
+/** 端末内AI（Gemma 4 E2B）のモデルファイルの状態 */
+export type LocalModelStatus = {
+  state: 'none' | 'downloading' | 'ready' | 'failed';
+  downloaded: number;
+  total: number;
+};
+
 declare class DailyNative extends NativeModule<DailyEvents> {
   hasUsagePermission(): boolean;
   openUsageSettings(): void;
   getTodayUsage(): Promise<TodayUsage>;
-  setConfig(apiKey: string, model: string, speak: boolean): void;
+  setConfig(apiKey: string, model: string, speak: boolean, brain: string): void;
+  getLocalModelStatus(): LocalModelStatus;
+  startModelDownload(): void;
+  deleteLocalModel(): void;
+  askLocalModel(systemPrompt: string, history: { role: string; text: string }[]): Promise<string>;
   startThinkingSound(): void;
   stopThinkingSound(): void;
   startService(): void;
@@ -77,8 +88,8 @@ export async function getTodayUsage(): Promise<TodayUsage | null> {
 }
 
 // ---- 常時待機サービス -----------------------------------------------------------
-export function setDailyConfig(apiKey: string, model: string, speak: boolean): void {
-  native?.setConfig(apiKey, model, speak);
+export function setDailyConfig(apiKey: string, model: string, speak: boolean, brain: string): void {
+  native?.setConfig(apiKey, model, speak, brain);
 }
 export function startDailyService(): void {
   native?.startService();
@@ -111,4 +122,20 @@ export function onDailyMessage(cb: (m: DailyMessage) => void): Sub {
 }
 export function onDailyState(cb: (s: DailyState) => void): Sub {
   return native ? native.addListener('onState', cb) : noSub;
+}
+
+// ---- 端末内AI（Gemma 4 E2B） ---------------------------------------------------
+export function getLocalModelStatus(): LocalModelStatus {
+  return native?.getLocalModelStatus() ?? { state: 'none', downloaded: 0, total: 0 };
+}
+export function startLocalModelDownload(): void {
+  native?.startModelDownload();
+}
+/** ダウンロードの中止、または保存済みモデルの削除 */
+export function deleteLocalModel(): void {
+  native?.deleteLocalModel();
+}
+export async function askLocalModel(systemPrompt: string, history: { role: string; text: string }[]): Promise<string> {
+  if (!native) throw new Error('端末内AIはこの環境では使えません。');
+  return native.askLocalModel(systemPrompt, history);
 }

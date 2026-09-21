@@ -22,10 +22,14 @@ android {
 }
 
 repositories {
+  google()
   mavenCentral()
 }
 
 dependencies {
   // 呼びかけ検出(openWakeWord)の推論に使う ONNX Runtime
   implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'
+
+  // 端末内AI（Gemma 4）を動かす LiteRT-LM。最初のビルドが通ったら、解決された版に固定してください
+  implementation 'com.google.ai.edge.litertlm:litertlm-android:latest.release'
 }

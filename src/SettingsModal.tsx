@@ -12,8 +12,40 @@ import {
   View,
 } from 'react-native';
 
+import {
+  deleteLocalModel,
+  getLocalModelStatus,
+  startLocalModelDownload,
+  type LocalModelStatus,
+} from '../modules/daily-native';
 import { DEFAULT_MODEL, type Settings } from './settings';
 import { colors } from './theme';
+
+const BRAINS: { key: Settings['brain']; label: string }[] = [
+  { key: 'auto', label: '自動' },
+  { key: 'cloud', label: 'Geminiのみ' },
+  { key: 'device', label: '端末内のみ' },
+];
+
+const BRAIN_HINT: Record<Settings['brain'], string> = {
+  auto: 'まず Gemini で答えます。回数制限・混雑・通信なしで使えないときは、端末内AIが代わりに答えます。',
+  cloud: 'Gemini だけを使います。',
+  device: '端末内AIだけを使います。通信がなくても動きます（返事の質は Gemini より下がります）。',
+};
+
+const gb = (bytes: number) => (bytes / 1e9).toFixed(2);
+
+/** 端末内AIモデルのダウンロード状況を、開いている間だけ定期的に読み直す */
+function useLocalModelStatus(active: boolean): LocalModelStatus {
+  const [status, setStatus] = useState<LocalModelStatus>(() => getLocalModelStatus());
+  useEffect(() => {
+    if (!active) return;
+    setStatus(getLocalModelStatus());
+    const timer = setInterval(() => setStatus(getLocalModelStatus()), 1500);
+    return () => clearInterval(timer);
+  }, [active]);
+  return status;
+}
 
 type Props = {
   visible: boolean;
@@ -25,6 +57,7 @@ type Props = {
 
 export function SettingsModal({ visible, settings, onSave, onClose, onClearChat }: Props) {
   const [draft, setDraft] = useState(settings);
+  const model = useLocalModelStatus(visible);
 
   // 開くたびに保存済みの値へ戻す
   useEffect(() => {
@@ -60,6 +93,43 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
             autoCapitalize="none"
             autoCorrect={false}
           />
+
+          <Text style={styles.label}>AIの頭脳</Text>
+          <View style={styles.segment}>
+            {BRAINS.map((b) => {
+              const on = draft.brain === b.key;
+              return (
+                <Pressable
+                  key={b.key}
+                  style={[styles.segItem, on && styles.segItemOn]}
+                  onPress={() => setDraft({ ...draft, brain: b.key })}
+                >
+                  <Text style={[styles.segText, on && styles.segTextOn]}>{b.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.hint}>{BRAIN_HINT[draft.brain]}</Text>
+
+          <Text style={styles.label}>端末内AI（Gemma 4 E2B・約2.5GB）</Text>
+          <Text style={styles.hint}>
+            {model.state === 'ready'
+              ? '準備完了。オフラインでも答えられます。'
+              : model.state === 'downloading'
+                ? `ダウンロード中… ${gb(model.downloaded)} / ${model.total > 0 ? gb(model.total) : '?'} GB（Wi-Fi に接続している間だけ進みます）`
+                : model.state === 'failed'
+                  ? 'ダウンロードに失敗しました。もう一度お試しください。'
+                  : '未ダウンロード。Wi-Fi で約2.5GBをダウンロードします（空き容量3GB以上を目安に）。'}
+          </Text>
+          {model.state === 'ready' || model.state === 'downloading' ? (
+            <Pressable style={[styles.secondary, styles.gapTop]} onPress={deleteLocalModel}>
+              <Text style={styles.secondaryText}>{model.state === 'ready' ? '端末内AIを削除' : 'ダウンロードを中止'}</Text>
+            </Pressable>
+          ) : (
+            <Pressable style={[styles.primary, styles.modelButton]} onPress={startLocalModelDownload}>
+              <Text style={styles.primaryText}>ダウンロード（Wi-Fi）</Text>
+            </Pressable>
+          )}
 
           <View style={styles.row}>
             <View style={styles.flex}>
@@ -144,4 +214,18 @@ const styles = StyleSheet.create({
   },
   secondaryText: { color: colors.ink, fontSize: 16 },
   inline: { marginTop: 0 },
+  gapTop: { marginTop: 8 },
+  modelButton: { flex: 0, marginTop: 8 },
+  segment: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  segItem: { flex: 1, paddingVertical: 11, alignItems: 'center' },
+  segItemOn: { backgroundColor: colors.teal },
+  segText: { fontSize: 14, color: colors.ink },
+  segTextOn: { color: '#fff', fontWeight: '700' },
 });

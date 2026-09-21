@@ -6,6 +6,8 @@ export const DEFAULT_MODEL = 'gemini-3.8-flash';
 export type Settings = {
   apiKey: string;
   model: string;
+  /** 返事を作る頭脳。auto=Gemini→使えないとき端末内AI / cloud=Geminiのみ / device=端末内AIのみ */
+  brain: 'auto' | 'cloud' | 'device';
   /** 返答を音声で読み上げる */
   speak: boolean;
   /** 読み上げ後に自動で聞き取りを再開する */
@@ -15,6 +17,7 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   model: DEFAULT_MODEL,
+  brain: 'auto',
   speak: true,
   handsFree: false,
 };

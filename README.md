@@ -33,6 +33,17 @@ Android の UsageStats（使用履歴）から今日のスマホ使用状況を�
 - 反応のしやすさは `WakeDetector.kt` の `THRESHOLD`（既定 0.5）。誤反応が多ければ 0.7、反応しなければ 0.35 くらいに。
 - モデルを読み込めない場合は、Android の音声認識で「デイリー」を探す簡易検出に自動で切り替わります。
 
+## 端末内AI（Gemma 4 E2B）
+
+Gemini の回数制限や通信なしのときのために、端末内で動く AI（Google AI Edge Gallery と同じ LiteRT-LM）を使えます。
+
+- 「設定」→「端末内AI」→「ダウンロード（Wi-Fi）」で、約2.5GBのモデルを取得します（アプリ専用の領域に保存）。
+- 「AIの頭脳」を選びます。
+  - **自動**: まず Gemini。使えないときは端末内AIが代わりに答える（おすすめ）
+  - **Geminiのみ** / **端末内のみ**（通信なしで動く）
+- 端末内AIは、使っていない状態が5分続くとメモリから解放します。初回の読み込みに数秒かかります。
+- GPUで動かない端末では、自動でCPUに切り替えます。
+
 ## 構成
 
 | パス | 役割 |
@@ -41,6 +52,7 @@ Android の UsageStats（使用履歴）から今日のスマホ使用状況を�
 | `modules/daily-native/.../WakeDetector.kt` | openWakeWord の推論とマイク監視 |
 | `modules/daily-native/.../WakeWord.kt` | 会話中の「デイリー戻って」検出（音声認識結果に対して） |
 | `modules/daily-native/.../ThinkingSound.kt` | 考え中の「ポコポコ」音を実行時に合成して鳴らす |
+| `modules/daily-native/.../LocalLlm.kt` / `LocalModel.kt` / `Brain.kt` | 端末内AI（LiteRT-LM）の実行 / モデルのダウンロード / 頭脳の選択 |
 | `modules/daily-native/.../GeminiClient.kt` / `PromptBuilder.kt` | Gemini API 呼び出し（混雑時は自動再試行）/ 使用状況入りのシステムプロンプト |
 | `modules/daily-native/.../UsageCollector.kt` | UsageStatsManager から今日の使用状況を集計 |
 | `src/useVoiceChat.ts` / `src/useDailyService.ts` | アプリ画面内の会話 / 常時待機のON/OFF |

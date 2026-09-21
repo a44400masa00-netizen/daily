@@ -12,7 +12,8 @@ import {
   stopThinkingSound,
   type TodayUsage,
 } from '../modules/daily-native';
-import { askGemini, type ChatTurn } from './gemini';
+import { askBrain, canAnswer, missingMessage } from './brain';
+import type { ChatTurn } from './gemini';
 import type { Settings } from './settings';
 import { buildSystemPrompt } from './usage';
 
@@ -180,8 +181,8 @@ export function useVoiceChat(settings: Settings) {
     changeStatus('thinking');
 
     const s = settingsRef.current;
-    if (!s.apiKey) {
-      addMessage('error', '右上の「設定」から Gemini API キーを入力してください。');
+    if (!canAnswer(s.brain, s.apiKey)) {
+      addMessage('error', missingMessage(s.brain));
       loopRef.current = false;
       changeStatus('idle');
       return;
@@ -192,7 +193,8 @@ export function useVoiceChat(settings: Settings) {
     try {
       // 毎回、最新の使用状況を取り直してシステムプロンプトに入れる
       const u = await refreshUsage();
-      const reply = await askGemini({
+      const reply = await askBrain({
+        brain: s.brain,
         apiKey: s.apiKey,
         model: s.model,
         systemPrompt: buildSystemPrompt(u, {

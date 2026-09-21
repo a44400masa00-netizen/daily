@@ -13,6 +13,7 @@ import {
   stopDailyService,
   type DailyState,
 } from '../modules/daily-native';
+import { canAnswer } from './brain';
 import type { Settings } from './settings';
 
 const STATE_LABEL: Record<DailyState['state'], string> = {
@@ -55,10 +56,10 @@ export function useDailyService(
 
   // 設定を変えたら、サービス側の保存値も更新（アプリを閉じてもこの値が使われる）
   useEffect(() => {
-    if (isDailyAvailable && settings.apiKey) {
-      setDailyConfig(settings.apiKey, settings.model, settings.speak);
+    if (isDailyAvailable) {
+      setDailyConfig(settings.apiKey, settings.model, settings.speak, settings.brain);
     }
-  }, [settings.apiKey, settings.model, settings.speak]);
+  }, [settings.apiKey, settings.model, settings.speak, settings.brain]);
 
   useEffect(() => {
     if (running) setDailyServicePaused(paused);
@@ -72,8 +73,12 @@ export function useDailyService(
         setRunning(false);
         return;
       }
-      if (!settings.apiKey) {
-        setError('先に右上の「設定」で Gemini API キーを入力してください。');
+      if (!canAnswer(settings.brain, settings.apiKey)) {
+        setError(
+          settings.brain === 'device'
+            ? '先に右上の「設定」で、端末内AIのモデルをダウンロードしてください。'
+            : '先に右上の「設定」で Gemini API キーを入力してください。'
+        );
         return;
       }
       const mic = PermissionsAndroid.PERMISSIONS.RECORD_AUDIO as Permission;
@@ -87,14 +92,14 @@ export function useDailyService(
         return;
       }
       try {
-        setDailyConfig(settings.apiKey, settings.model, settings.speak);
+        setDailyConfig(settings.apiKey, settings.model, settings.speak, settings.brain);
         startDailyService();
         setRunning(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : '開始できませんでした。');
       }
     },
-    [settings.apiKey, settings.model, settings.speak]
+    [settings.apiKey, settings.model, settings.speak, settings.brain]
   );
 
   return {

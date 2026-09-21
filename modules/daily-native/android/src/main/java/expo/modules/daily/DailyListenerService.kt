@@ -465,8 +465,10 @@ class DailyListenerService : Service() {
       val apiKey = prefs.getString("api_key", "").orEmpty()
       val model = prefs.getString("model", "gemini-3.8-flash").orEmpty().ifBlank { "gemini-3.8-flash" }
 
-      if (apiKey.isBlank()) {
-        main.post { deliverError(text, "アプリを開いて、設定でジェミニのAPIキーを入れてください。") }
+      val brainMode = prefs.getString("brain", "auto").orEmpty().ifBlank { "auto" }
+
+      if (!Brain.canAnswer(applicationContext, brainMode, apiKey)) {
+        main.post { deliverError(text, Brain.missingMessage(brainMode)) }
         return@execute
       }
 
@@ -476,7 +478,7 @@ class DailyListenerService : Service() {
       history.add(GeminiClient.Turn("user", text))
 
       try {
-        val reply = GeminiClient.ask(apiKey, model, PromptBuilder.build(applicationContext), trimmedHistory())
+        val reply = Brain.ask(applicationContext, brainMode, apiKey, model, PromptBuilder.build(applicationContext), trimmedHistory())
         val ignored = reply.contains(PromptBuilder.IGNORE_TOKEN)
         if (ignored && !addressed) {
           // 動画や周囲の声など、デイリーへの話しかけではない → 何も言わず聞き取りに戻る

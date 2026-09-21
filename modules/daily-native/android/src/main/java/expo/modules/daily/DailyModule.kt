@@ -47,11 +47,12 @@ class DailyModule : Module() {
 
     // ---- 常時待機サービス ------------------------------------------------------
     // サービスはアプリが閉じていても読めるよう、設定を端末内の非公開領域に保存する
-    Function("setConfig") { apiKey: String, model: String, speak: Boolean ->
+    Function("setConfig") { apiKey: String, model: String, speak: Boolean, brain: String ->
       context.getSharedPreferences(DailyListenerService.PREFS, Context.MODE_PRIVATE).edit()
         .putString("api_key", apiKey)
         .putString("model", model)
         .putBoolean("speak", speak)
+        .putString("brain", brain)
         .apply()
     }
 
@@ -76,6 +77,27 @@ class DailyModule : Module() {
 
     Function("stopThinkingSound") {
       thinking.stop()
+    }
+
+    // ---- 端末内AI（Gemma 4 E2B） ------------------------------------------------
+    Function("getLocalModelStatus") {
+      LocalModel.status(context)
+    }
+
+    Function("startModelDownload") {
+      LocalModel.start(context)
+    }
+
+    Function("deleteLocalModel") {
+      LocalModel.deleteAll(context)
+    }
+
+    AsyncFunction("askLocalModel") { systemPrompt: String, history: List<Map<String, String>> ->
+      LocalLlm.ask(
+        context,
+        systemPrompt,
+        history.map { GeminiClient.Turn(it["role"] ?: "user", it["text"] ?: "") }
+      )
     }
 
     Function("isServiceRunning") {
