@@ -1,29 +1,46 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- 今回追加したアラーム・タイマー用の権限 -->
-    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-    </queries>
+  <!-- スマホの操作（タイマー・アラーム・音量・明るさ・電力モードなど） -->
+  <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+  <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+  <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
-    <application>
-        <!-- LiteRT-LM の GPU 実行に必要（端末に無ければ使わない） -->
-        <uses-native-library android:name="libvndksupport.so" android:required="false" />
-        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+  <queries>
+    <intent>
+      <action android:name="android.speech.RecognitionService" />
+    </intent>
+  </queries>
 
-        <!-- 画面ロック中・アプリを閉じている間もマイクで待機するフォアグラウンドサービス -->
-        <service
-            android:name="expo.modules.daily.DailyListenerService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
-    </application>
+  <application>
+    <!-- LiteRT-LM の GPU 実行に必要（端末に無ければ使わない） -->
+    <uses-native-library android:name="libvndksupport.so" android:required="false" />
+    <uses-native-library android:name="libOpenCL.so" android:required="false" />
+
+    <!-- 画面ロック中・アプリを閉じている間もマイクで待機するフォアグラウンドサービス -->
+    <service
+      android:name="expo.modules.daily.DailyListenerService"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
+
+    <!-- タイマー/アラームの時刻に呼ばれ、音を鳴らすサービスを起動する -->
+    <receiver android:name="expo.modules.daily.AlarmReceiver" android:exported="false" />
+    <service
+      android:name="expo.modules.daily.AlarmRingService"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback" />
+  </application>
 </manifest>

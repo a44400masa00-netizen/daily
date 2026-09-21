@@ -8,6 +8,10 @@ export type Settings = {
   model: string;
   /** 返事を作る頭脳。auto=Gemini→使えないとき端末内AI / cloud=Geminiのみ / device=端末内AIのみ */
   brain: 'auto' | 'cloud' | 'device';
+  /** ユーザーの呼び方: masa=「まさ」 / you=「あなた」 */
+  callName: 'masa' | 'you';
+  /** 話し方: polite=敬語 / casual=ため口 */
+  tone: 'polite' | 'casual';
   /** 返答を音声で読み上げる */
   speak: boolean;
   /** 読み上げ後に自動で聞き取りを再開する */
@@ -18,6 +22,8 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   model: DEFAULT_MODEL,
   brain: 'auto',
+  callName: 'masa',
+  tone: 'polite',
   speak: true,
   handsFree: false,
 };

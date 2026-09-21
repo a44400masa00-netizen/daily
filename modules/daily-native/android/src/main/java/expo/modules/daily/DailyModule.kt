@@ -1,50 +1,152 @@
 package expo.modules.daily
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
-import android.provider.AlarmClock
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 class DailyModule : Module() {
+
+  private val thinking = ThinkingSound()
+
+  private val context: Context
+    get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+
   override fun definition() = ModuleDefinition {
     Name("Daily")
 
-    // React Native側（App.tsx）から設定を受け取ってPromptBuilderの変数を更新する関数
-    Function("updateAiSettings") { name: String, tone: String ->
-        PromptBuilder.userNameSetting = name
-        PromptBuilder.toneSetting = tone
+    // サービス → JS（アプリが開いている間だけ届く）
+    Events("onMessage", "onState")
+
+    OnCreate {
+      DailyBus.listener = { name, payload -> sendEvent(name, payload) }
+    }
+    OnDestroy {
+      DailyBus.listener = null
+      thinking.stop()
     }
 
-    // タイマーを設定する関数
-    Function("setTimer") { seconds: Int, message: String ->
-        val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-            putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        appContext.reactContext?.startActivity(intent)
+    // ---- 使用状況 (UsageStats) ------------------------------------------------
+    Function("hasUsagePermission") {
+      UsageCollector.hasPermission(context)
     }
 
-    // アラームを設定する関数
-    Function("setAlarm") { hour: Int, minute: Int, message: String ->
-        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-            putExtra(AlarmClock.EXTRA_HOUR, hour)
-            putExtra(AlarmClock.EXTRA_MINUTES, minute)
-            putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        appContext.reactContext?.startActivity(intent)
+    Function("openUsageSettings") {
+      openUsageAccessSettings()
     }
 
-    // バッテリー（省電力）設定画面を開く関数
+    AsyncFunction("getTodayUsage") {
+      UsageCollector.collectToday(context).toMap()
+    }
+
+    // ---- 常時待機サービス ------------------------------------------------------
+    // サービスはアプリが閉じていても読めるよう、設定を端末内の非公開領域に保存する
+    Function("setConfig") { apiKey: String, model: String, speak: Boolean, brain: String, callName: String, tone: String ->
+      context.getSharedPreferences(DailyListenerService.PREFS, Context.MODE_PRIVATE).edit()
+        .putString("api_key", apiKey)
+        .putString("model", model)
+        .putBoolean("speak", speak)
+        .putString("brain", brain)
+        .putString("call_name", callName)
+        .putString("tone", tone)
+        .apply()
+    }
+
+    Function("startService") {
+      val ctx = context
+      if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        throw IllegalStateException("マイクの許可が必要です")
+      }
+      val intent = Intent(ctx, DailyListenerService::class.java)
+      if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(intent) else ctx.startService(intent)
+      Unit // ComponentName を JS に返さない
+    }
+
+    Function("stopService") {
+      context.stopService(Intent(context, DailyListenerService::class.java))
+    }
+
+    // 「考え中」のポコポコ音（アプリ画面での会話用。サービス側は自前で鳴らす）
+    Function("startThinkingSound") {
+      thinking.start()
+    }
+
+    Function("stopThinkingSound") {
+      thinking.stop()
+    }
+
+    // ---- 端末内AI（Gemma 4 E2B） ------------------------------------------------
+    Function("getLocalModelStatus") {
+      LocalModel.status(context)
+    }
+
+    Function("startModelDownload") {
+      LocalModel.start(context)
+    }
+
+    Function("deleteLocalModel") {
+      LocalModel.deleteAll(context)
+    }
+
+    AsyncFunction("askLocalModel") { systemPrompt: String, history: List<Map<String, String>> ->
+      LocalLlm.ask(
+        context,
+        systemPrompt,
+        history.map { GeminiClient.Turn(it["role"] ?: "user", it["text"] ?: "") }
+      )
+    }
+
+    // ---- 呼び方・話し方、スマホの操作 ------------------------------------------------
+    Function("getPromptExtras") { callName: String, tone: String ->
+      PromptBuilder.extras(callName, tone)
+    }
+
+    // 返事に含まれる [[ACTION:...]] を実行し、読み上げる文章を返す
+    AsyncFunction("processReply") { reply: String ->
+      PhoneActions.process(context, reply)
+    }
+
+    Function("getControlStatus") {
+      PhoneActions.controlStatus(context)
+    }
+
+    Function("openControlSettings") { kind: String ->
+      PhoneActions.openControlSettings(context, kind)
+    }
+
+    Function("isServiceRunning") {
+      DailyListenerService.running
+    }
+
+    Function("setServicePaused") { paused: Boolean ->
+      DailyListenerService.setPaused(paused)
+    }
+
+    // 電池の最適化の設定画面（除外しておくとロック中も止まりにくい）
     Function("openBatterySettings") {
-        val intent = Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        appContext.reactContext?.startActivity(intent)
+      val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(intent)
     }
+  }
+
+  private fun openUsageAccessSettings() {
+    val ctx = context
+    val base = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        ctx.startActivity(Intent(base).setData(Uri.parse("package:${ctx.packageName}")))
+        return
+      }
+    } catch (e: Exception) {
+      // 機種によっては非対応 → 一覧画面にフォールバック
+    }
+    ctx.startActivity(base)
   }
 }

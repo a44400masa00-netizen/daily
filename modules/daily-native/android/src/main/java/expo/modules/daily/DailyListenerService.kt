@@ -416,7 +416,8 @@ class DailyListenerService : Service() {
     phase = Phase.BUSY
     main.removeCallbacks(restartRunnable)
     destroyRecognizer()
-    speakText("はい、待機に戻ります。また呼んでくださいね。", "model")
+    val casual = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("tone", "polite") == "casual"
+    speakText(if (casual) "うん、待機に戻るね。また呼んでね。" else "はい、待機に戻ります。また呼んでくださいね。", "model")
   }
 
   /** 長時間だれも話さなかったら待機に戻す（つけっぱなし防止） */
@@ -479,14 +480,14 @@ class DailyListenerService : Service() {
 
       try {
         val reply = Brain.ask(applicationContext, brainMode, apiKey, model, PromptBuilder.build(applicationContext), trimmedHistory())
-        val ignored = reply.contains("<IGNORE>")
+        val ignored = reply.contains(PromptBuilder.IGNORE_TOKEN)
         if (ignored && !addressed) {
           // 動画や周囲の声など、デイリーへの話しかけではない → 何も言わず聞き取りに戻る
           history.removeAt(history.size - 1)
           main.post { resumeListening() }
           return@execute
         }
-        val finalText = if (ignored) "うまく聞き取れませんでした。もう一度お願いします。" else reply
+        val finalText = if (ignored) "うまく聞き取れませんでした。もう一度お願いします。" else PhoneActions.process(applicationContext, reply)
         history.add(GeminiClient.Turn("model", finalText))
         main.post { deliverReply(text, finalText) }
       } catch (e: Exception) {

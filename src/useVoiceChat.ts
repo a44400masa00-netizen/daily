@@ -7,7 +7,9 @@ import {
   getTodayUsage,
   hasUsagePermission,
   isUsageStatsAvailable,
+  getPromptExtras,
   openUsageAccessSettings,
+  processReply,
   startThinkingSound,
   stopThinkingSound,
   type TodayUsage,
@@ -197,16 +199,22 @@ export function useVoiceChat(settings: Settings) {
         brain: s.brain,
         apiKey: s.apiKey,
         model: s.model,
-        systemPrompt: buildSystemPrompt(u, {
-          available: isUsageStatsAvailable,
-          permitted: hasUsagePermission(),
-        }),
+        systemPrompt:
+          buildSystemPrompt(u, {
+            available: isUsageStatsAvailable,
+            permitted: hasUsagePermission(),
+          }) +
+          '\n\n' +
+          getPromptExtras(s.callName, s.tone), // 呼び方・話し方・スマホ操作のしかた
         history: toHistory(messagesRef.current),
         signal: controller.signal,
       });
       if (sessionRef.current !== session) return;
-      addMessage('model', reply);
-      speakReply(reply, session);
+      // 返事に含まれるスマホの操作(タイマー等)を実行し、読み上げる文章を受け取る
+      const spoken = await processReply(reply);
+      if (sessionRef.current !== session) return;
+      addMessage('model', spoken);
+      speakReply(spoken, session);
     } catch (e) {
       if (sessionRef.current !== session) return; // 中断された
       addMessage('error', e instanceof Error ? e.message : '不明なエラーが発生しました。');

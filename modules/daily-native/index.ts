@@ -49,11 +49,27 @@ export type LocalModelStatus = {
   total: number;
 };
 
+/** スマホの操作に必要な許可の状態 */
+export type ControlStatus = {
+  /** システム設定の変更（画面の明るさ） */
+  writeSettings: boolean;
+  /** 通知ポリシー（おやすみモード・マナーモード） */
+  notificationPolicy: boolean;
+  /** WRITE_SECURE_SETTINGS（電力モード）。パソコンからの adb 許可が必要 */
+  secureSettings: boolean;
+  /** 正確な時刻のアラーム */
+  exactAlarm: boolean;
+};
+
 declare class DailyNative extends NativeModule<DailyEvents> {
   hasUsagePermission(): boolean;
   openUsageSettings(): void;
   getTodayUsage(): Promise<TodayUsage>;
-  setConfig(apiKey: string, model: string, speak: boolean, brain: string): void;
+  setConfig(apiKey: string, model: string, speak: boolean, brain: string, callName: string, tone: string): void;
+  getPromptExtras(callName: string, tone: string): string;
+  processReply(reply: string): Promise<string>;
+  getControlStatus(): ControlStatus;
+  openControlSettings(kind: string): void;
   getLocalModelStatus(): LocalModelStatus;
   startModelDownload(): void;
   deleteLocalModel(): void;
@@ -88,8 +104,15 @@ export async function getTodayUsage(): Promise<TodayUsage | null> {
 }
 
 // ---- 常時待機サービス -----------------------------------------------------------
-export function setDailyConfig(apiKey: string, model: string, speak: boolean, brain: string): void {
-  native?.setConfig(apiKey, model, speak, brain);
+export function setDailyConfig(
+  apiKey: string,
+  model: string,
+  speak: boolean,
+  brain: string,
+  callName: string,
+  tone: string
+): void {
+  native?.setConfig(apiKey, model, speak, brain, callName, tone);
 }
 export function startDailyService(): void {
   native?.startService();
@@ -138,4 +161,28 @@ export function deleteLocalModel(): void {
 export async function askLocalModel(systemPrompt: string, history: { role: string; text: string }[]): Promise<string> {
   if (!native) throw new Error('端末内AIはこの環境では使えません。');
   return native.askLocalModel(systemPrompt, history);
+}
+
+// ---- 呼び方・話し方、スマホの操作 -------------------------------------------------
+/** システムプロンプトに足す「呼び方・話し方・スマホ操作のしかた」 */
+export function getPromptExtras(callName: string, tone: string): string {
+  return native?.getPromptExtras(callName, tone) ?? '';
+}
+/** AIの返事に含まれる操作([[ACTION:...]])を実行し、読み上げる文章を返す */
+export async function processReply(reply: string): Promise<string> {
+  if (!native) return reply;
+  return native.processReply(reply);
+}
+export function getControlStatus(): ControlStatus {
+  return (
+    native?.getControlStatus() ?? {
+      writeSettings: false,
+      notificationPolicy: false,
+      secureSettings: false,
+      exactAlarm: false,
+    }
+  );
+}
+export function openControlSettings(kind: 'writeSettings' | 'notificationPolicy' | 'exactAlarm'): void {
+  native?.openControlSettings(kind);
 }

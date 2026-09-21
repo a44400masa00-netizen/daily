@@ -14,8 +14,11 @@ import {
 
 import {
   deleteLocalModel,
+  getControlStatus,
   getLocalModelStatus,
+  openControlSettings,
   startLocalModelDownload,
+  type ControlStatus,
   type LocalModelStatus,
 } from '../modules/daily-native';
 import { DEFAULT_MODEL, type Settings } from './settings';
@@ -47,6 +50,59 @@ function useLocalModelStatus(active: boolean): LocalModelStatus {
   return status;
 }
 
+/** 選択肢を横に並べた切り替え */
+function Segment<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: T; label: string }[];
+  value: T;
+  onChange: (key: T) => void;
+}) {
+  return (
+    <View style={styles.segment}>
+      {options.map((o) => {
+        const on = value === o.key;
+        return (
+          <Pressable key={o.key} style={[styles.segItem, on && styles.segItemOn]} onPress={() => onChange(o.key)}>
+            <Text style={[styles.segText, on && styles.segTextOn]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** スマホの操作に必要な許可の状態を、開いている間だけ定期的に読み直す */
+function useControlStatus(active: boolean): ControlStatus {
+  const [status, setStatus] = useState<ControlStatus>(() => getControlStatus());
+  useEffect(() => {
+    if (!active) return;
+    setStatus(getControlStatus());
+    const timer = setInterval(() => setStatus(getControlStatus()), 1500);
+    return () => clearInterval(timer);
+  }, [active]);
+  return status;
+}
+
+function PermissionRow({ title, granted, onPress }: { title: string; granted: boolean; onPress?: () => void }) {
+  return (
+    <View style={styles.permRow}>
+      <Text style={[styles.flexText, styles.rowTitle]}>{title}</Text>
+      {granted ? (
+        <Text style={styles.granted}>許可済み</Text>
+      ) : (
+        <Pressable style={styles.permButton} onPress={onPress}>
+          <Text style={styles.permButtonText}>許可する</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const ADB_COMMAND = 'adb shell pm grant com.example.daily android.permission.WRITE_SECURE_SETTINGS';
+
 type Props = {
   visible: boolean;
   settings: Settings;
@@ -58,6 +114,7 @@ type Props = {
 export function SettingsModal({ visible, settings, onSave, onClose, onClearChat }: Props) {
   const [draft, setDraft] = useState(settings);
   const model = useLocalModelStatus(visible);
+  const control = useControlStatus(visible);
 
   // 開くたびに保存済みの値へ戻す
   useEffect(() => {
@@ -92,6 +149,26 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
+          />
+
+          <Text style={styles.label}>私の呼び方</Text>
+          <Segment
+            options={[
+              { key: 'masa', label: '「まさ」' },
+              { key: 'you', label: '「あなた」' },
+            ]}
+            value={draft.callName}
+            onChange={(callName) => setDraft({ ...draft, callName })}
+          />
+
+          <Text style={styles.label}>話し方</Text>
+          <Segment
+            options={[
+              { key: 'polite', label: '敬語' },
+              { key: 'casual', label: 'ため口' },
+            ]}
+            value={draft.tone}
+            onChange={(tone) => setDraft({ ...draft, tone })}
           />
 
           <Text style={styles.label}>AIの頭脳</Text>
@@ -130,6 +207,42 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
               <Text style={styles.primaryText}>ダウンロード（Wi-Fi）</Text>
             </Pressable>
           )}
+
+          <Text style={styles.label}>スマホの操作（許可）</Text>
+          <Text style={styles.hint}>
+            「3分のタイマー」「7時にアラーム」「ライトをつけて」「音量を下げて」などは、追加の許可なしで使えます。
+            次の操作には、それぞれ許可が必要です。
+          </Text>
+          <PermissionRow
+            title="画面の明るさ（システム設定の変更）"
+            granted={control.writeSettings}
+            onPress={() => openControlSettings('writeSettings')}
+          />
+          <PermissionRow
+            title="おやすみモード・マナーモード（通知ポリシー）"
+            granted={control.notificationPolicy}
+            onPress={() => openControlSettings('notificationPolicy')}
+          />
+          <PermissionRow
+            title="正確な時刻のタイマー・アラーム"
+            granted={control.exactAlarm}
+            onPress={() => openControlSettings('exactAlarm')}
+          />
+          <View style={styles.permRow}>
+            <Text style={[styles.flexText, styles.rowTitle]}>電力モード（バッテリーセーバー）</Text>
+            {control.secureSettings ? <Text style={styles.granted}>許可済み</Text> : null}
+          </View>
+          {!control.secureSettings && (
+            <Text style={styles.hint}>
+              電力モードの切り替えだけは、パソコンからの一度きりの設定が必要です。スマホの「開発者向けオプション」で
+              USBデバッグをオンにし、パソコンにつないで次のコマンドを実行してください。{'\n'}
+              <Text selectable style={styles.code}>{ADB_COMMAND}</Text>
+            </Text>
+          )}
+          <Text style={styles.hint}>
+            Wi-Fi・Bluetooth・機内モードの切り替えと、アプリの起動は、Android の制限で直接はできません。
+            その代わり「画面の通知をタップすると設定が開く」形で案内します。
+          </Text>
 
           <View style={styles.row}>
             <View style={styles.flex}>
@@ -215,6 +328,12 @@ const styles = StyleSheet.create({
   secondaryText: { color: colors.ink, fontSize: 16 },
   inline: { marginTop: 0 },
   gapTop: { marginTop: 8 },
+  permRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
+  flexText: { flex: 1 },
+  granted: { fontSize: 13, color: colors.teal, fontWeight: '700' },
+  permButton: { backgroundColor: colors.teal, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  permButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  code: { fontFamily: 'monospace', fontSize: 12, color: colors.ink },
   modelButton: { flex: 0, marginTop: 8 },
   segment: {
     flexDirection: 'row',
