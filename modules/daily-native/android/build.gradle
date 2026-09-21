@@ -42,3 +42,20 @@ tasks.configureEach { task ->
     task.compilerOptions.freeCompilerArgs.add("-Xskip-metadata-version-check")
   }
 }
+
+// LiteRT-LM が Kotlin 2.4 の標準ライブラリを持ち込むため、ほかのモジュール(expo など)の
+// コンパイル用クラスパスにも 2.4 が混ざり、Kotlin 2.1 のコンパイラが読めず失敗していた。
+// コンパイル時だけ、ほかのモジュールでは標準ライブラリを 2.1.20 に固定する。
+// （実行時は LiteRT-LM が必要とする新しい版のまま。このモジュール自身のコンパイルも変えない）
+def selfPath = project.path
+rootProject.allprojects { p ->
+  if (p.path != selfPath) {
+    p.configurations.matching { it.name.endsWith("CompileClasspath") }.configureEach { c ->
+      c.resolutionStrategy.eachDependency { d ->
+        if (d.requested.group == "org.jetbrains.kotlin" && d.requested.name.startsWith("kotlin-stdlib")) {
+          d.useVersion("2.1.20")
+        }
+      }
+    }
+  }
+}
