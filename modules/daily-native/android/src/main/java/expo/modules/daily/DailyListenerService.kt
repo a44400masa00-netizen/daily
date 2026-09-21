@@ -27,6 +27,7 @@ import android.util.Log
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.os.Build
 
 /**
  * 「デイリー」と呼びかけると起動する常駐サービス（マイク型フォアグラウンドサービス）。
