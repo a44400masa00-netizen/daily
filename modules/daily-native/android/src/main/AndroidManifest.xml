@@ -1,27 +1,29 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-  <uses-permission android:name="android.permission.INTERNET" />
-  <uses-permission android:name="android.permission.RECORD_AUDIO" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-  <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 今回追加したアラーム・タイマー用の権限 -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
-  <queries>
-    <intent>
-      <action android:name="android.speech.RecognitionService" />
-    </intent>
-  </queries>
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
-  <application>
-    <!-- LiteRT-LM の GPU 実行に必要（端末に無ければ使わない） -->
-    <uses-native-library android:name="libvndksupport.so" android:required="false" />
-    <uses-native-library android:name="libOpenCL.so" android:required="false" />
+    <application>
+        <!-- LiteRT-LM の GPU 実行に必要（端末に無ければ使わない） -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
 
-    <!-- 画面ロック中・アプリを閉じている間もマイクで待機するフォアグラウンドサービス -->
-    <service
-      android:name="expo.modules.daily.DailyListenerService"
-      android:exported="false"
-      android:foregroundServiceType="microphone" />
-  </application>
+        <!-- 画面ロック中・アプリを閉じている間もマイクで待機するフォアグラウンドサービス -->
+        <service
+            android:name="expo.modules.daily.DailyListenerService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+    </application>
 </manifest>
