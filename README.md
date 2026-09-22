@@ -67,16 +67,17 @@ Wi-Fi・Bluetooth・機内モードのオン・オフ、電話、メッセージ
 - 反応のしやすさは `WakeDetector.kt` の `THRESHOLD`（既定 0.5）。誤反応が多ければ 0.7、反応しなければ 0.35 くらいに。
 - モデルを読み込めない場合は、Android の音声認識で「デイリー」を探す簡易検出に自動で切り替わります。
 
-## 端末内AI（Gemma 4 E2B）
+## 端末内AI（Qwen2.5 3B Instruct）
 
-Gemini の回数制限や通信なしのときのために、端末内で動く AI（Google AI Edge Gallery と同じ LiteRT-LM）を使えます。
+Gemini の回数制限や通信なしのときのために、端末内で動く AI（Qwen2.5 3B Instruct, GGUF / Q4_K_M）を使えます。
+実機では Pixel 7a で動作を確認済みです。推論には llama.cpp のプリビルド済みラッパー「llama-android」を使い、CPU（NEON）で動きます。
 
-- 「設定」→「端末内AI」→「ダウンロード（Wi-Fi）」で、約2.5GBのモデルを取得します（アプリ専用の領域に保存）。
+- 「設定」→「端末内AI」→「ダウンロード（Wi-Fi）」で、約2.1GBのモデルを取得します（アプリ専用の領域に保存）。
+- クラウド側は既定で **gemini-2.5-flash** を使います。設定画面のモデル名からいつでも変更できます。
 - 「AIの頭脳」を選びます。
   - **自動**: まず Gemini。使えないときは端末内AIが代わりに答える（おすすめ）
   - **Geminiのみ** / **端末内のみ**（通信なしで動く）
 - 端末内AIは、使っていない状態が5分続くとメモリから解放します。初回の読み込みに数秒かかります。
-- GPUで動かない端末では、自動でCPUに切り替えます。
 
 ## 構成
 
@@ -87,7 +88,7 @@ Gemini の回数制限や通信なしのときのために、端末内で動く 
 | `modules/daily-native/.../PhoneActions.kt` / `Alarms.kt` / `AlarmRing.kt` | スマホの操作の実行 / タイマー・アラームの予約 / 鳴らすサービス |
 | `modules/daily-native/.../WakeWord.kt` | 会話中の「デイリー戻って」検出（音声認識結果に対して） |
 | `modules/daily-native/.../ThinkingSound.kt` | 考え中の「ポコポコ」音を実行時に合成して鳴らす |
-| `modules/daily-native/.../LocalLlm.kt` / `LocalModel.kt` / `Brain.kt` | 端末内AI（LiteRT-LM）の実行 / モデルのダウンロード / 頭脳の選択 |
+| `modules/daily-native/.../LocalLlm.kt` / `LocalModel.kt` / `Brain.kt` | 端末内AI（Qwen2.5, llama-android）の実行 / モデルのダウンロード / 頭脳の選択 |
 | `modules/daily-native/.../GeminiClient.kt` / `PromptBuilder.kt` | Gemini API 呼び出し（混雑時は自動再試行）/ 使用状況入りのシステムプロンプト |
 | `modules/daily-native/.../UsageCollector.kt` | UsageStatsManager から今日の使用状況を集計 |
 | `src/useVoiceChat.ts` / `src/useDailyService.ts` | アプリ画面内の会話 / 常時待機のON/OFF |

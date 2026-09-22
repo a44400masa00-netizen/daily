@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 group = 'expo.modules.daily'
-version = '0.2.0'
+version = '0.3.0'
 
 def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
 apply from: expoModulesCorePlugin
@@ -14,7 +14,7 @@ android {
   namespace "expo.modules.daily"
   defaultConfig {
     versionCode 1
-    versionName "0.2.0"
+    versionName "0.3.0"
   }
   lint {
     abortOnError false
@@ -30,32 +30,12 @@ dependencies {
   // 呼びかけ検出(openWakeWord)の推論に使う ONNX Runtime
   implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'
 
-  // 端末内AI（Gemma 4）を動かす LiteRT-LM。ビルドで解決された 0.17.1 に固定（Kotlin 2.4 でビルドされている）
-  implementation 'com.google.ai.edge.litertlm:litertlm-android:0.17.1'
-}
+  // 端末内AI（Qwen2.5 3B Instruct, GGUF）を動かす、プリビルド済みのllama.cppラッパー。
+  // NDK/CMakeのセットアップが要らず、Kotlin 2.1系のコンパイラともバージョンの衝突を起こさない
+  // （以前使っていたLiteRT-LMはKotlin 2.4でビルドされていて、このモジュール以外の
+  //  コンパイルまで巻き込んで失敗させていた。そのための回避策はもう不要）
+  implementation 'dev.ffmpegkit-maintained:llama-android:0.1.0'
 
-// LiteRT-LM は Kotlin 2.4 でビルドされているが、Expo SDK 57 の Kotlin コンパイラは 2.1.x で、
-// そのままだと「incompatible version of Kotlin」でコンパイルに失敗する。
-// このモジュールのコンパイルだけ、新しい Kotlin のメタデータの版チェックを省略する。
-tasks.configureEach { task ->
-  if (task.name.startsWith("compile") && task.name.endsWith("Kotlin") && task.hasProperty("compilerOptions")) {
-    task.compilerOptions.freeCompilerArgs.add("-Xskip-metadata-version-check")
-  }
-}
-
-// LiteRT-LM が Kotlin 2.4 の標準ライブラリを持ち込むため、ほかのモジュール(expo など)の
-// コンパイル用クラスパスにも 2.4 が混ざり、Kotlin 2.1 のコンパイラが読めず失敗していた。
-// コンパイル時だけ、ほかのモジュールでは標準ライブラリを 2.1.20 に固定する。
-// （実行時は LiteRT-LM が必要とする新しい版のまま。このモジュール自身のコンパイルも変えない）
-def selfPath = project.path
-rootProject.allprojects { p ->
-  if (p.path != selfPath) {
-    p.configurations.matching { it.name.endsWith("CompileClasspath") }.configureEach { c ->
-      c.resolutionStrategy.eachDependency { d ->
-        if (d.requested.group == "org.jetbrains.kotlin" && d.requested.name.startsWith("kotlin-stdlib")) {
-          d.useVersion("2.1.20")
-        }
-      }
-    }
-  }
+  // llama-android の suspend 関数をブロッキング呼び出しするためのコルーチン
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
 }

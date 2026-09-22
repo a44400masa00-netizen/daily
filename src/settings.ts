@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
-// gemini-3.8-flash は 2026年9月時点の最新 Flash。設定画面から変更できる。
-export const DEFAULT_MODEL = 'gemini-3.8-flash';
+// gemini-2.5-flash を既定に設定。設定画面からいつでも変更できる。
+export const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 export type Settings = {
   apiKey: string;

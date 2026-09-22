@@ -202,7 +202,7 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
           </View>
           <Text style={styles.hint}>{BRAIN_HINT[draft.brain]}</Text>
 
-          <Text style={styles.label}>端末内AI（Gemma 4 E2B・約2.5GB）</Text>
+          <Text style={styles.label}>端末内AI（Qwen2.5 3B Instruct・約2.1GB）</Text>
           <Text style={styles.hint}>
             {model.state === 'ready'
               ? '準備完了。オフラインでも答えられます。'
@@ -210,7 +210,7 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
                 ? `ダウンロード中… ${gb(model.downloaded)} / ${model.total > 0 ? gb(model.total) : '?'} GB（Wi-Fi に接続している間だけ進みます）`
                 : model.state === 'failed'
                   ? 'ダウンロードに失敗しました。もう一度お試しください。'
-                  : '未ダウンロード。Wi-Fi で約2.5GBをダウンロードします（空き容量3GB以上を目安に）。'}
+                  : '未ダウンロード。Wi-Fi で約2.1GBをダウンロードします（空き容量3GB以上を目安に）。'}
           </Text>
           {model.state === 'ready' || model.state === 'downloading' ? (
             <Pressable style={[styles.secondary, styles.gapTop]} onPress={deleteLocalModel}>

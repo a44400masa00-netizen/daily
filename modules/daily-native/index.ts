@@ -42,7 +42,7 @@ type DailyEvents = {
   onState(e: DailyState): void;
 };
 
-/** 端末内AI（Gemma 4 E2B）のモデルファイルの状態 */
+/** 端末内AI（Qwen2.5 3B Instruct）のモデルファイルの状態 */
 export type LocalModelStatus = {
   state: 'none' | 'downloading' | 'ready' | 'failed';
   downloaded: number;
@@ -158,7 +158,7 @@ export function onDailyState(cb: (s: DailyState) => void): Sub {
   return native ? native.addListener('onState', cb) : noSub;
 }
 
-// ---- 端末内AI（Gemma 4 E2B） ---------------------------------------------------
+// ---- 端末内AI（Qwen2.5 3B Instruct） ---------------------------------------------------
 export function getLocalModelStatus(): LocalModelStatus {
   return native?.getLocalModelStatus() ?? { state: 'none', downloaded: 0, total: 0 };
 }

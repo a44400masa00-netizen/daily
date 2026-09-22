@@ -26,10 +26,6 @@
   </queries>
 
   <application>
-    <!-- LiteRT-LM の GPU 実行に必要（端末に無ければ使わない） -->
-    <uses-native-library android:name="libvndksupport.so" android:required="false" />
-    <uses-native-library android:name="libOpenCL.so" android:required="false" />
-
     <!-- 画面ロック中・アプリを閉じている間もマイクで待機するフォアグラウンドサービス -->
     <service
       android:name="expo.modules.daily.DailyListenerService"

@@ -82,7 +82,7 @@ class DailyModule : Module() {
       thinking.stop()
     }
 
-    // ---- 端末内AI（Gemma 4 E2B） ------------------------------------------------
+    // ---- 端末内AI（Qwen2.5 3B Instruct） ------------------------------------------------
     Function("getLocalModelStatus") {
       LocalModel.status(context)
     }

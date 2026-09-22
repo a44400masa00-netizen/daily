@@ -6,18 +6,19 @@ import android.net.Uri
 import java.io.File
 
 /**
- * 端末内AI（Gemma 4 E2B, LiteRT-LM 形式）のモデルファイルのダウンロードと状態管理。
+ * 端末内AI（Qwen2.5 3B Instruct, GGUF）のモデルファイルのダウンロードと状態管理。
  * ダウンロードは Android 標準の DownloadManager に任せる（Wi-Fi のみ・中断しても再開・通知バーに進捗）。
  * ファイルはこのアプリ専用の領域に保存され、他のアプリからは見えない。
  */
 object LocalModel {
 
-  const val FILE_NAME = "gemma-4-E2B-it.litertlm"
+  const val FILE_NAME = "qwen2.5-3b-instruct-q4_k_m.gguf"
+  // Qwen公式のGGUF配布（Q4_K_M量子化）。実機での動作確認は「Qwen/Qwen2.5-3B-Instruct-GGUF」で行われたもの
   private const val URL =
-    "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm"
+    "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
 
-  // 完了とみなす最小サイズ（実際は約 2.5GB）
-  private const val MIN_BYTES = 2_000_000_000L
+  // 完了とみなす最小サイズ（実際は約 2.1GB）
+  private const val MIN_BYTES = 1_900_000_000L
   private const val KEY_DL_ID = "model_dl_id"
 
   fun file(ctx: Context): File = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, FILE_NAME)
@@ -82,7 +83,7 @@ object LocalModel {
     file(ctx).delete() // 中途半端なファイルが残っていると別名で保存されることがあるため
     val request = DownloadManager.Request(Uri.parse(URL))
       .setTitle("デイリー: 端末内AIモデル")
-      .setDescription("Gemma 4 E2B（約2.5GB）")
+      .setDescription("Qwen2.5 3B Instruct（約2.1GB）")
       .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
       .setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI) // 容量が大きいので Wi-Fi のみ
       .setDestinationInExternalFilesDir(ctx, null, FILE_NAME)

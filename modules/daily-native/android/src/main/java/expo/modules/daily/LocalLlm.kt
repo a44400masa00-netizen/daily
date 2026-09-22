@@ -3,103 +3,64 @@ package expo.modules.daily
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Contents
-import com.google.ai.edge.litertlm.ConversationConfig
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.Message
-import com.google.ai.edge.litertlm.SamplerConfig
-import com.google.ai.edge.litertlm.ThinkingConfig
+import dev.ffmpegkit.llama.Llama
+import dev.ffmpegkit.llama.LlamaConfig
+import kotlinx.coroutines.runBlocking
 
 /**
- * 端末内AI（Gemma 4 E2B）で返事を作る。LiteRT-LM（Google AI Edge Gallery と同じ仕組み）を使う。
- * モデルは約2.5GBあるので、使っていないと5分で解放してメモリを空ける。
+ * 端末内AI（Qwen2.5 3B Instruct, GGUF）で返事を作る。
+ * llama.cpp を Android から呼ぶ軽量ラッパー "llama-android"（CPU/NEON動作）を使う。
+ *
+ * 注意: dev.ffmpegkit.llama.Llama.loadModel() が返す型の正式名は、公式ドキュメントの
+ * サンプルコードには明記されていない。ここでは "LlamaModel" という名前だと推測して書いている。
+ * ビルドで "Unresolved reference" になった場合は、まずこの型名を疑うこと。
+ *
+ * モデルは約2.1GBあるので、使っていないと5分で解放してメモリを空ける。
  */
 object LocalLlm {
 
   private const val IDLE_RELEASE_MS = 5 * 60 * 1000L
+  private const val CONTEXT_SIZE = 2048
+  private const val MAX_HISTORY_TURNS = 6 // 直前の会話をどこまで文脈として渡すか
 
-  private var engine: Engine? = null
-  private var useGpu = true // GPUで失敗したらCPUに切り替える
+  private var model: dev.ffmpegkit.llama.LlamaModel? = null
   private val handler = Handler(Looper.getMainLooper())
   private val releaseRunnable = Runnable { Thread { release() }.start() }
 
   /** ブロッキング（数秒かかる）。バックグラウンドスレッドから呼ぶこと */
   @Synchronized
-  fun ask(ctx: Context, systemPrompt: String, history: List<GeminiClient.Turn>): String {
+  fun ask(ctx: Context, systemPrompt: String, history: List<GeminiClient.Turn>): String = try {
     handler.removeCallbacks(releaseRunnable)
-    try {
-      return try {
-        generate(ctx, systemPrompt, history)
-      } catch (t: Throwable) {
-        if (!useGpu) throw t
-        // GPUで失敗（画面オフ中など）→ CPUで作り直して1回だけやり直す
-        useGpu = false
-        closeEngine()
-        generate(ctx, systemPrompt, history)
-      }
-    } catch (t: Throwable) {
-      throw GeminiClient.GeminiException("端末内AIでエラーが起きました。", (t.message ?: t.javaClass.simpleName).take(160))
-    } finally {
-      handler.postDelayed(releaseRunnable, IDLE_RELEASE_MS)
-    }
+    runBlocking { generate(ctx, systemPrompt, history) }
+  } catch (t: Throwable) {
+    throw GeminiClient.GeminiException("端末内AIでエラーが起きました。", (t.message ?: t.javaClass.simpleName).take(160))
+  } finally {
+    handler.postDelayed(releaseRunnable, IDLE_RELEASE_MS)
   }
 
   @Synchronized
   fun release() {
-    closeEngine()
+    model = null // llama-android にモデルを明示的に閉じるAPIがあれば、本来はここで呼ぶ
   }
 
-  private fun closeEngine() {
-    try {
-      engine?.close()
-    } catch (ignored: Throwable) {
-      // ignore
-    }
-    engine = null
-  }
-
-  private fun generate(ctx: Context, systemPrompt: String, history: List<GeminiClient.Turn>): String {
-    val eng = engine ?: createEngine(ctx).also { engine = it }
+  private suspend fun generate(ctx: Context, systemPrompt: String, history: List<GeminiClient.Turn>): String {
+    val m = model ?: Llama.loadModel(
+      modelPath = LocalModel.file(ctx).absolutePath,
+      config = LlamaConfig(contextSize = CONTEXT_SIZE, threads = 4),
+    ).also { model = it }
 
     val last = history.lastOrNull { it.role == "user" } ?: throw IllegalArgumentException("empty history")
-    // 直前までの会話（最大8件、user から始める）を文脈として渡し、最後の発話だけを送る
-    val prior = history.dropLast(1).takeLast(8).dropWhile { it.role != "user" }
+    // Qwenの会話テンプレートは Llama.complete が自動で適用するので、直前のやり取りは
+    // 「ユーザー: 〜」「デイリー: 〜」の形で1つの文章にまとめ、簡易な文脈として渡す
+    val prior = history.dropLast(1).takeLast(MAX_HISTORY_TURNS)
+    val context = prior.joinToString("") { (if (it.role == "user") "ユーザー: " else "デイリー: ") + it.text + "\n" }
 
-    val config = ConversationConfig(
-      systemInstruction = Contents.of(systemPrompt),
-      initialMessages = prior.map { if (it.role == "user") Message.user(it.text) else Message.model(it.text) },
-      samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.8),
-      thinkingConfig = ThinkingConfig(enableThinking = false), // 声で話す用途なので考えすぎない
-      maxOutputToken = 256
+    val result = Llama.complete(
+      m,
+      prompt = context + "ユーザー: " + last.text,
+      systemPrompt = systemPrompt,
+      maxTokens = 220,
     )
-    return eng.createConversation(config).use { conversation ->
-      conversation.sendMessage(last.text).toString().trim()
-    }
-  }
-
-  private fun createEngine(ctx: Context): Engine {
-    val path = LocalModel.file(ctx).absolutePath
-    val backends: List<() -> Backend> =
-      if (useGpu) listOf({ Backend.GPU() }, { Backend.CPU() }) else listOf({ Backend.CPU() })
-
-    var lastError: Throwable? = null
-    for (make in backends) {
-      var e: Engine? = null
-      try {
-        e = Engine(EngineConfig(modelPath = path, backend = make(), cacheDir = ctx.cacheDir.absolutePath))
-        e.initialize()
-        return e
-      } catch (t: Throwable) {
-        lastError = t
-        try {
-          e?.close()
-        } catch (ignored: Throwable) {
-          // ignore
-        }
-      }
-    }
-    throw IllegalStateException(lastError?.message ?: "端末内AIを起動できません")
+    return result.text.trim()
   }
 }
