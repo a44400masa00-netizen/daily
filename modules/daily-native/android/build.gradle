@@ -34,7 +34,7 @@ dependencies {
   // NDK/CMakeのセットアップが要らず、Kotlin 2.1系のコンパイラともバージョンの衝突を起こさない
   // （以前使っていたLiteRT-LMはKotlin 2.4でビルドされていて、このモジュール以外の
   //  コンパイルまで巻き込んで失敗させていた。そのための回避策はもう不要）
-  implementation 'dev.ffmpegkit-maintained:llama-android:0.1.0'
+  implementation 'dev.ffmpegkit-maintained:llama-android:0.1.1'
 
   // llama-android の suspend 関数をブロッキング呼び出しするためのコルーチン
   implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
