@@ -82,18 +82,23 @@ object PromptBuilder {
 
   private fun extrasFromPrefs(ctx: Context): String {
     val prefs = ctx.getSharedPreferences(DailyListenerService.PREFS, Context.MODE_PRIVATE)
-    return extras(prefs.getString("call_name", "masa").orEmpty(), prefs.getString("tone", "polite").orEmpty())
+    return extras(
+      prefs.getString("call_name", "masa").orEmpty(),
+      prefs.getString("tone", "polite").orEmpty(),
+      prefs.getString("music_app", "").orEmpty()
+    )
   }
 
   /** ユーザーの呼び方・話し方の指示と、スマホ操作のしかた。アプリ画面側(JS)のプロンプトにも同じものを足す */
-  fun extras(callName: String, tone: String): String {
+  fun extras(callName: String, tone: String, musicApp: String): String {
     val call =
       if (callName == "you") "ユーザーのことは「あなた」と呼んでください。ただし毎回ではなく、必要なときだけにしてください。"
       else "ユーザーのことは「まさ」と呼んでください。毎回ではなく、ときどき自然に呼びかけてください。"
     val talk =
       if (tone == "casual") "話し方はタメ口にしてください。親しい友達のように「〜だよ」「〜だね」「〜してね」と話し、敬語（です・ます）は使わないでください。"
       else "話し方は、です・ます調の丁寧な敬語にしてください。"
-    return "# 呼び方と話し方（これを最優先で守る）\n- $call\n- $talk\n\n" + ACTION_RULES
+    val music = if (musicApp.isBlank()) "音楽アプリは未設定です。" else "ユーザーが設定した音楽アプリは「$musicApp」です。"
+    return "# 呼び方と話し方（これを最優先で守る）\n- $call\n- $talk\n\n" + ACTION_RULES + "\n$music appは省略するとこのアプリを使います。"
   }
 
   private val ACTION_RULES = """
@@ -112,7 +117,9 @@ object PromptBuilder {
 - battery_saver {"on": true}  電力モード（バッテリーセーバー）
 - do_not_disturb {"on": true}  おやすみモード
 - ringer_mode {"mode": "vibrate"}  normal / vibrate / silent
-- open_app {"name": "Instagram"}  アプリを開く（画面に出る通知をタップして開く形になります）
+- open_app {"name": "Instagram"}  アプリを開く（ハンズフリーで開きます。名前はアプリの正式名で）
+- play_music {"query": "米津玄師 Lemon", "app": "Spotify"}  音楽アプリで曲・アーティスト・プレイリストを検索して再生（app は省略可）
+- media {"command": "pause"}  再生中の音楽の操作。pause / play / next / previous / stop
 - open_settings {"screen": "wifi"}  設定画面を開く。screenは wifi / bluetooth / airplane / display / sound / battery / location / mobile / other
 
 例:

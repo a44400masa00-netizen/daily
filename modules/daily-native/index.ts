@@ -59,14 +59,24 @@ export type ControlStatus = {
   secureSettings: boolean;
   /** 正確な時刻のアラーム */
   exactAlarm: boolean;
+  /** 通知へのアクセス。許可すると、アプリを開く・音楽を再生するのがタップなしのハンズフリーになる */
+  notificationListener: boolean;
 };
 
 declare class DailyNative extends NativeModule<DailyEvents> {
   hasUsagePermission(): boolean;
   openUsageSettings(): void;
   getTodayUsage(): Promise<TodayUsage>;
-  setConfig(apiKey: string, model: string, speak: boolean, brain: string, callName: string, tone: string): void;
-  getPromptExtras(callName: string, tone: string): string;
+  setConfig(
+    apiKey: string,
+    model: string,
+    speak: boolean,
+    brain: string,
+    callName: string,
+    tone: string,
+    musicApp: string
+  ): void;
+  getPromptExtras(callName: string, tone: string, musicApp: string): string;
   processReply(reply: string): Promise<string>;
   getControlStatus(): ControlStatus;
   openControlSettings(kind: string): void;
@@ -110,9 +120,10 @@ export function setDailyConfig(
   speak: boolean,
   brain: string,
   callName: string,
-  tone: string
+  tone: string,
+  musicApp: string
 ): void {
-  native?.setConfig(apiKey, model, speak, brain, callName, tone);
+  native?.setConfig(apiKey, model, speak, brain, callName, tone, musicApp);
 }
 export function startDailyService(): void {
   native?.startService();
@@ -165,8 +176,8 @@ export async function askLocalModel(systemPrompt: string, history: { role: strin
 
 // ---- 呼び方・話し方、スマホの操作 -------------------------------------------------
 /** システムプロンプトに足す「呼び方・話し方・スマホ操作のしかた」 */
-export function getPromptExtras(callName: string, tone: string): string {
-  return native?.getPromptExtras(callName, tone) ?? '';
+export function getPromptExtras(callName: string, tone: string, musicApp: string): string {
+  return native?.getPromptExtras(callName, tone, musicApp) ?? '';
 }
 /** AIの返事に含まれる操作([[ACTION:...]])を実行し、読み上げる文章を返す */
 export async function processReply(reply: string): Promise<string> {
@@ -180,9 +191,12 @@ export function getControlStatus(): ControlStatus {
       notificationPolicy: false,
       secureSettings: false,
       exactAlarm: false,
+      notificationListener: false,
     }
   );
 }
-export function openControlSettings(kind: 'writeSettings' | 'notificationPolicy' | 'exactAlarm'): void {
+export function openControlSettings(
+  kind: 'writeSettings' | 'notificationPolicy' | 'exactAlarm' | 'notificationListener'
+): void {
   native?.openControlSettings(kind);
 }

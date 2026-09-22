@@ -171,6 +171,20 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
             onChange={(tone) => setDraft({ ...draft, tone })}
           />
 
+          <Text style={styles.label}>よく使う音楽アプリ（任意）</Text>
+          <TextInput
+            style={styles.input}
+            value={draft.musicApp}
+            onChangeText={(musicApp) => setDraft({ ...draft, musicApp })}
+            placeholder="例: Spotify、YouTube Music"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={styles.hint}>
+            「音楽かけて」のように、アプリ名を言わなかったときに使います。曲ごとに別のアプリを言うこともできます。
+          </Text>
+
           <Text style={styles.label}>AIの頭脳</Text>
           <View style={styles.segment}>
             {BRAINS.map((b) => {
@@ -228,6 +242,11 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
             granted={control.exactAlarm}
             onPress={() => openControlSettings('exactAlarm')}
           />
+          <PermissionRow
+            title="アプリを開く・音楽を再生（ハンズフリー）"
+            granted={control.notificationListener}
+            onPress={() => openControlSettings('notificationListener')}
+          />
           <View style={styles.permRow}>
             <Text style={[styles.flexText, styles.rowTitle]}>電力モード（バッテリーセーバー）</Text>
             {control.secureSettings ? <Text style={styles.granted}>許可済み</Text> : null}
@@ -240,8 +259,10 @@ export function SettingsModal({ visible, settings, onSave, onClose, onClearChat 
             </Text>
           )}
           <Text style={styles.hint}>
-            Wi-Fi・Bluetooth・機内モードの切り替えと、アプリの起動は、Android の制限で直接はできません。
-            その代わり「画面の通知をタップすると設定が開く」形で案内します。
+            {control.notificationListener
+              ? '「アプリを開く・音楽を再生」が許可されているので、タップなしでアプリが開いたり曲が再生されたりします。'
+              : '「アプリを開く・音楽を再生」を許可していない間は、通知が出るのでタップして開いてください。'}
+            {' '}Wi-Fi・Bluetooth・機内モードの切り替えは、Android の制限で直接はできません（設定画面を開く案内になります）。
           </Text>
 
           <View style={styles.row}>

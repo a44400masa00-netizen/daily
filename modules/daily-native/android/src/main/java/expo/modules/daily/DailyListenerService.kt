@@ -274,6 +274,7 @@ class DailyListenerService : Service() {
         }
         armSessionTimeout()
         if (candidates.any { WakeWord.isEndCommand(it) }) {
+          DailyBus.emit("onMessage", mapOf("role" to "user", "text" to first)) // 認識された文を画面にも出す
           endSession()
           return
         }
@@ -281,10 +282,7 @@ class DailyListenerService : Service() {
         val stripped = WakeWord.extractCommand(first)
         when {
           stripped == null -> processCommand(first, addressed = false)
-          stripped.isEmpty() -> {
-            chime()
-            scheduleRestart(350)
-          }
+          stripped.isEmpty() -> scheduleRestart(150) // 「デイリー」だけ。続きを待つ（会話中は合図音を鳴らさない）
           else -> processCommand(stripped, addressed = true)
         }
       }
@@ -537,6 +535,11 @@ class DailyListenerService : Service() {
   /** 考え中/読み上げが終わったあと: 会話中ならそのまま続きを聞く、そうでなければ呼びかけ待ちへ */
   private fun resumeListening() {
     thinking.stop()
+    if (PhoneActions.consumeEndSession()) {
+      // 音楽を流したので会話モードを終える（歌詞を話しかけと聞き間違えないように）
+      sessionActive = false
+      main.removeCallbacks(sessionTimeoutRunnable)
+    }
     abandonFocus()
     if (stopped) return
     phase = if (sessionActive) Phase.SESSION else Phase.WAKE

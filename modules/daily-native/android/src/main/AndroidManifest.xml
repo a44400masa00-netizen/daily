@@ -36,6 +36,17 @@
       android:exported="false"
       android:foregroundServiceType="microphone" />
 
+    <!-- 何もしない通知リスナー。「通知へのアクセス」を許可すると、バックグラウンドからアプリを開ける／音楽アプリを操作できる -->
+    <service
+      android:name="expo.modules.daily.DailyNotificationListener"
+      android:exported="true"
+      android:label="デイリー"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
     <!-- タイマー/アラームの時刻に呼ばれ、音を鳴らすサービスを起動する -->
     <receiver android:name="expo.modules.daily.AlarmReceiver" android:exported="false" />
     <service

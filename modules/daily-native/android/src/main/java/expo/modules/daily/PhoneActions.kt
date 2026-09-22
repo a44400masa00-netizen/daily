@@ -13,6 +13,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.KeyEvent
 import org.json.JSONObject
 import java.util.Locale
 
@@ -85,6 +86,8 @@ object PhoneActions {
     "do_not_disturb" -> doNotDisturb(ctx, args.optBoolean("on", true))
     "ringer_mode" -> ringerMode(ctx, args.optString("mode", "normal"))
     "open_app" -> openApp(ctx, args.optString("name", ""))
+    "play_music" -> playMusic(ctx, args)
+    "media" -> mediaControl(ctx, args.optString("command", ""))
     "open_settings" -> openSettings(ctx, args.optString("screen", "other"))
     else -> fail("その操作にはまだ対応していません。")
   }
@@ -190,25 +193,28 @@ object PhoneActions {
     return ok()
   }
 
-  // ---- アプリ・設定画面を開く（通知をタップして開く） ---------------------------------------
+  // ---- アプリ・設定画面を開く（ハンズフリー） --------------------------------------------------
 
-  private fun normalize(s: String): String = s.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+  private const val LISTENER_HINT = "タップなしで開くには、アプリの設定で「通知へのアクセス」を許可してください。"
 
   private fun openApp(ctx: Context, name: String): Outcome {
-    val target = normalize(name)
-    if (target.isEmpty()) return fail("開くアプリの名前が分かりませんでした。")
-    val pm = ctx.packageManager
-    val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-    val found = pm.queryIntentActivities(launcher, 0).firstOrNull {
-      val label = normalize(it.loadLabel(pm).toString())
-      label.isNotEmpty() && (label.contains(target) || target.contains(label))
-    } ?: return fail("「$name」というアプリが見つかりませんでした。")
+    if (AppFinder.normalize(name).isEmpty()) return fail("開くアプリの名前が分かりませんでした。")
+    val app = AppFinder.find(ctx, name) ?: return fail("「$name」というアプリが見つかりませんでした。")
+    val intent = ctx.packageManager.getLaunchIntentForPackage(app.packageName)
+      ?: return fail("「${app.label}」を開けませんでした。")
+    return launchOrNotify(ctx, intent, app.packageName, app.label)
+  }
 
-    val label = found.loadLabel(pm).toString()
-    val intent = pm.getLaunchIntentForPackage(found.activityInfo.packageName)
-      ?: return fail("「$label」を開けませんでした。")
+  /** ハンズフリーで開く。開けなかった（許可なし・画面ロック中など）ときは、タップして開く通知にする */
+  private fun launchOrNotify(ctx: Context, intent: Intent, expectedPackage: String?, label: String): Outcome {
+    if (Launcher.start(ctx, Intent(intent), expectedPackage)) return ok()
     postOpenNotification(ctx, "$label を開く", "タップすると開きます", intent)
-    return ok("画面の通知をタップすると、${label}が開きます。")
+    val reason = when {
+      !DailyNotificationListener.isEnabled(ctx) -> LISTENER_HINT
+      Launcher.isLocked(ctx) -> "画面がロックされているので、ロックを解除してから通知をタップしてください。"
+      else -> "自動では開けませんでした。"
+    }
+    return ok("画面の通知をタップすると、${label}が開きます。$reason")
   }
 
   private fun openSettings(ctx: Context, screen: String): Outcome {
@@ -223,12 +229,47 @@ object PhoneActions {
       "mobile" -> Settings.ACTION_NETWORK_OPERATOR_SETTINGS to "モバイル通信"
       else -> Settings.ACTION_SETTINGS to "設定"
     }
-    postOpenNotification(ctx, "${label}の設定を開く", "タップすると開きます", Intent(action))
-    return ok("画面の通知をタップすると、${label}の設定が開きます。")
+    val intent = Intent(action)
+    val pkg = intent.resolveActivity(ctx.packageManager)?.packageName
+    return launchOrNotify(ctx, intent, pkg, "${label}の設定")
+  }
+
+  // ---- 音楽 -----------------------------------------------------------------------------
+
+  @Volatile
+  private var endSessionRequested = false
+
+  /** 音楽を流したら会話モードを終える（音楽の歌詞を話しかけと聞き間違えないように）。読み取ったら false に戻る */
+  fun consumeEndSession(): Boolean {
+    val v = endSessionRequested
+    endSessionRequested = false
+    return v
+  }
+
+  private fun playMusic(ctx: Context, args: JSONObject): Outcome {
+    val r = MusicPlayer.play(ctx, args.optString("app", ""), args.optString("query", ""))
+    if (!r.ok) return fail(r.message)
+    endSessionRequested = true
+    return ok()
+  }
+
+  private fun mediaControl(ctx: Context, command: String): Outcome {
+    val code = when (command) {
+      "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
+      "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
+      "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
+      "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+      "stop" -> KeyEvent.KEYCODE_MEDIA_STOP
+      else -> return fail("音楽の操作が分かりませんでした。")
+    }
+    val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+    return ok()
   }
 
   /**
-   * バックグラウンドからは画面を直接開けない（Android の制限）ので、タップして開く通知を出す。
+   * ハンズフリーで開けなかったときの代わりに、タップして開く通知を出す。
    */
   private fun postOpenNotification(ctx: Context, title: String, text: String, intent: Intent) {
     val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -258,7 +299,8 @@ object PhoneActions {
       "writeSettings" to Settings.System.canWrite(ctx),
       "notificationPolicy" to nm.isNotificationPolicyAccessGranted,
       "secureSettings" to (ctx.checkSelfPermission(SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED),
-      "exactAlarm" to am.canScheduleExactAlarms()
+      "exactAlarm" to am.canScheduleExactAlarms(),
+      "notificationListener" to DailyNotificationListener.isEnabled(ctx)
     )
   }
 
@@ -268,6 +310,7 @@ object PhoneActions {
       "writeSettings" -> Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, pkg)
       "notificationPolicy" -> Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
       "exactAlarm" -> Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg)
+      "notificationListener" -> Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
       else -> return
     }
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

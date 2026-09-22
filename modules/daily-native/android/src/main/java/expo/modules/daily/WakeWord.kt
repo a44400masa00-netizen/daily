@@ -63,10 +63,21 @@ object WakeWord {
     return sb.toString()
   }
 
-  /** 「デイリー戻って」「デイリー戻っていいよ」など、会話を終える呼びかけか */
+  // 「デイリー」の聞き間違い（デリー・ディリー・ダイリー・dairy など）も含めて、呼びかけらしい音
+  private val WAKE_LIKE = WORDS + listOf("でいり", "でぃり", "だいり", "でり", "dairy", "でいりい")
+
+  /**
+   * 「デイリー戻って」「デイリー戻っていいよ」など、会話を終える呼びかけか。
+   *  - 「戻って」などの終了の言葉が無ければ false
+   *  - 呼びかけ（の聞き間違い）が一緒にあれば true
+   *  - 呼びかけが認識されなくても、短い発話（「戻って」だけ等）なら true。
+   *    音声認識は「デイリー」と「戻って」を別々の発話として返すことがあるため
+   */
   fun isEndCommand(raw: String): Boolean {
     val s = normalizeAll(raw)
-    if (WORDS.none { s.contains(it) }) return false // 「デイリー」が無ければ普通の会話として扱う
-    return END_WORDS.any { s.contains(it) }
+    if (END_WORDS.none { s.contains(it) }) return false
+    return WAKE_LIKE.any { s.contains(it) } || s.length <= SHORT_UTTERANCE
   }
+
+  private const val SHORT_UTTERANCE = 10
 }

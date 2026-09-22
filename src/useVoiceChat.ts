@@ -205,7 +205,7 @@ export function useVoiceChat(settings: Settings) {
             permitted: hasUsagePermission(),
           }) +
           '\n\n' +
-          getPromptExtras(s.callName, s.tone), // 呼び方・話し方・スマホ操作のしかた
+          getPromptExtras(s.callName, s.tone, s.musicApp), // 呼び方・話し方・スマホ操作のしかた
         history: toHistory(messagesRef.current),
         signal: controller.signal,
       });

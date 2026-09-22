@@ -12,6 +12,8 @@ export type Settings = {
   callName: 'masa' | 'you';
   /** 話し方: polite=敬語 / casual=ため口 */
   tone: 'polite' | 'casual';
+  /** ハンズフリーで音楽を再生するときの既定のアプリ名（空なら毎回AIに伝える必要あり） */
+  musicApp: string;
   /** 返答を音声で読み上げる */
   speak: boolean;
   /** 読み上げ後に自動で聞き取りを再開する */
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   brain: 'auto',
   callName: 'masa',
   tone: 'polite',
+  musicApp: '',
   speak: true,
   handsFree: false,
 };

@@ -47,7 +47,7 @@ class DailyModule : Module() {
 
     // ---- 常時待機サービス ------------------------------------------------------
     // サービスはアプリが閉じていても読めるよう、設定を端末内の非公開領域に保存する
-    Function("setConfig") { apiKey: String, model: String, speak: Boolean, brain: String, callName: String, tone: String ->
+    Function("setConfig") { apiKey: String, model: String, speak: Boolean, brain: String, callName: String, tone: String, musicApp: String ->
       context.getSharedPreferences(DailyListenerService.PREFS, Context.MODE_PRIVATE).edit()
         .putString("api_key", apiKey)
         .putString("model", model)
@@ -55,6 +55,7 @@ class DailyModule : Module() {
         .putString("brain", brain)
         .putString("call_name", callName)
         .putString("tone", tone)
+        .putString("music_app", musicApp)
         .apply()
     }
 
@@ -103,8 +104,8 @@ class DailyModule : Module() {
     }
 
     // ---- 呼び方・話し方、スマホの操作 ------------------------------------------------
-    Function("getPromptExtras") { callName: String, tone: String ->
-      PromptBuilder.extras(callName, tone)
+    Function("getPromptExtras") { callName: String, tone: String, musicApp: String ->
+      PromptBuilder.extras(callName, tone, musicApp)
     }
 
     // 返事に含まれる [[ACTION:...]] を実行し、読み上げる文章を返す
