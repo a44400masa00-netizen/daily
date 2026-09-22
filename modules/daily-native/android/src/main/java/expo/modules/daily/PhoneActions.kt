@@ -247,7 +247,15 @@ object PhoneActions {
   }
 
   private fun playMusic(ctx: Context, args: JSONObject): Outcome {
-    val r = MusicPlayer.play(ctx, args.optString("app", ""), args.optString("query", ""))
+    // AIは "title"/"artist" を分けず "query" にまとめて渡してくる想定なので、
+    // rawQuery として渡し、MusicPlayer 側の後方互換の検索に任せる
+    val r = MusicPlayer.play(
+      ctx,
+      args.optString("app", ""),
+      args.optString("title", ""),
+      args.optString("artist", ""),
+      args.optString("query", "")
+    )
     if (!r.ok) return fail(r.message)
     endSessionRequested = true
     return ok()
